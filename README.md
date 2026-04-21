@@ -554,6 +554,16 @@ If a trade already has a visible chat feedback command such as `message:` or `co
 10. Use `/_trade debug <id> reset <player|all>` when you need to clear tracked usage data.
 11. Run `/_trade reload` after manual YAML edits.
 
+## Support
+
+If you want to ask a question, report a bug, or suggest an improvement, please use the GitHub Issues page:
+
+- [1MBTrades Issues](https://github.com/mrfdev/1MBTrades/issues)
+
+Community links:
+
+- [1MoreBlock Discord](https://discord.gg/floris)
+
 ## Publishing This Project To GitHub From CLI
 
 This workspace is currently not initialized as a Git repository. To connect it to your empty GitHub repository:
@@ -576,6 +586,13 @@ SSH alternative:
 git remote add origin git@github.com:mrfdev/1MBTrades.git
 git push -u origin main
 ```
+
+## Credits
+
+- Idea and server use-case direction by Floris for [1MoreBlock.com](https://1moreblock.com/).
+- Built for the 1MoreBlock Minecraft server network and its event, vote, and kit-trade workflows.
+- Development was mainly realized with the help of [OpenAI](https://openai.com/).
+- Community and project home: [discord.gg/floris](https://discord.gg/floris)
 
 ## Notes For Future Maintenance
 
