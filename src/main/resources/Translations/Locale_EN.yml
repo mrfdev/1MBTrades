@@ -1,0 +1,100 @@
+gui:
+  index-title: "<#F6D365><bold>Seasonal Trades</bold></#F6D365>"
+  trade-title: "<#F6D365><bold>Trade</bold></#F6D365><gray>:</gray> <white>%trade_name%</white>"
+  filler:
+    name: " "
+    lore: []
+  info-book:
+    name: "<#72DDF7>Trade Info</#72DDF7>"
+    lore:
+      - "<gray>Click to run the info command(s).</gray>"
+      - "<gray>Usually this is a CMI ctext file.</gray>"
+  trade-button:
+    name: "<#8BE28B>Confirm Trade</#8BE28B>"
+    lore:
+      - "<gray>Click this button to trade</gray>"
+      - "<gray>the listed requirements.</gray>"
+  back-button:
+    name: "<#F6D365>Back</#F6D365>"
+    lore:
+      - "<gray>Return to the trade index.</gray>"
+  close-button:
+    name: "<#FF6B6B>Close</#FF6B6B>"
+    lore:
+      - "<gray>Close this menu.</gray>"
+  previous-page:
+    name: "<#F6D365>Previous Page</#F6D365>"
+    lore:
+      - "<gray>View the previous page.</gray>"
+  next-page:
+    name: "<#F6D365>Next Page</#F6D365>"
+    lore:
+      - "<gray>View the next page.</gray>"
+  page-indicator:
+    name: "<white>Page <yellow>%page%</yellow>/<yellow>%max_page%</yellow></white>"
+    lore:
+      - "<gray>Browse all available trades.</gray>"
+  ready-status:
+    name: "<#8BE28B>Ready To Trade</#8BE28B>"
+    lore:
+      - "<gray>You have everything needed.</gray>"
+  missing-status:
+    name: "<#FF6B6B>Missing Items</#FF6B6B>"
+    lore:
+      - "<gray>You are still missing:</gray>"
+      - "<white>%missing_items%</white>"
+  locked-status:
+    name: "<gray>Unavailable</gray>"
+    lore:
+      - "<gray>This trade cannot be completed right now.</gray>"
+  reward-preview:
+    name: "<gradient:#F6D365:#FDA085>Reward Preview</gradient>"
+    lore:
+      - "<gray>This trade runs reward commands.</gray>"
+      - "<gray>Set reward-item for a custom preview.</gray>"
+  player-head-name: "<#F6D365>%player_name%</#F6D365>"
+  player-head-lore:
+    - "<gray>Level:</gray> <white>%player_exp%</white>"
+    - "<gray>Balance:</gray> <white>%player_balance%</white>"
+    - "<gray>Click trades to inspect them.</gray>"
+
+messages:
+  players-only: "<red>Only players can use that part of the command.</red>"
+  no-permission: "<red>You do not have permission to do that.</red>"
+  player-not-found: "<red>Player '<white>%target%</white>' is not online.</red>"
+  console-needs-player: "<red>Console must specify a target player.</red>"
+  trade-not-found: "<red>Trade '<white>%trade_id%</white>' was not found.</red>"
+  invalid-trade-id: "<red>Trade id must only use lowercase letters, numbers, underscores, and hyphens.</red>"
+  trade-disabled: "<red>That trade is currently disabled.</red>"
+  trade-locked: "<red>You cannot access that trade right now.</red>"
+  trade-completed: "<yellow>You already unlocked this trade reward.</yellow>"
+  trade-limit-reached: "<yellow>You already reached the usage limit for this trade.</yellow>"
+  trade-missing: "<red>Trade failed. Missing: <white>%missing_items%</white></red>"
+  trade-success: "<green>Trade complete.</green>"
+  reload-complete: "<green>1MB-Trades reloaded successfully.</green>"
+  trade-created: "<green>Created trade '<white>%trade_id%</white>'.</green>"
+  requirements-captured: "<green>Captured requirements from your main inventory for '<white>%trade_id%</white>'.</green>"
+  icon-captured: "<green>Captured the GUI icon from your main hand for '<white>%trade_id%</white>'.</green>"
+  reward-captured: "<green>Captured the reward preview item from your main hand for '<white>%trade_id%</white>'.</green>"
+  command-added: "<green>Added a '<white>%group%</white>' command to '<white>%trade_id%</white>'.</green>"
+  commands-cleared: "<green>Cleared '<white>%group%</white>' commands for '<white>%trade_id%</white>'.</green>"
+  property-updated: "<green>Updated '<white>%property%</white>' for '<white>%trade_id%</white>'.</green>"
+  toggle-updated: "<green>Set '<white>%trade_id%</white>' enabled=<white>%value%</white>.</green>"
+  debug-reset-player: "<green>Reset '<white>%trade_id%</white>' for '<white>%target%</white>'. Removed <white>%previous_uses%</white> recorded use(s).</green>"
+  debug-reset-all: "<green>Reset '<white>%trade_id%</white>' for <white>%affected_players%</white> tracked player file(s).</green>"
+
+text:
+  unavailable-balance: "<gray>Unavailable</gray>"
+  default-trade-description: "<gray>Describe this trade here.</gray>"
+  trade-index-reward-line: "<gray>Reward:</gray> <white>%reward_name%</white>"
+  trade-index-requirements-line: "<gray>Requirements:</gray> <white>%requirements_count%</white> item entr%requirements_suffix%"
+  trade-index-status-line: "<gray>Status:</gray> %trade_status%"
+  trade-index-admin-file-line: "<dark_gray>%trade_file%</dark_gray>"
+  trade-index-inspect-line: "<yellow>Click to inspect this trade.</yellow>"
+  reward-preview-extra-line: "<gray>Preview only. Rewards still come from commands.</gray>"
+  index-status-ready: "<#8BE28B>Ready</#8BE28B>"
+  index-status-collecting: "<#72DDF7>Collecting</#72DDF7>"
+  index-status-unlocked: "<#8BE28B>Unlocked</#8BE28B>"
+  index-status-limit-reached: "<#F6D365>Limit Reached</#F6D365>"
+  index-status-disabled: "<#FF6B6B>Disabled</#FF6B6B>"
+  index-status-locked: "<gray>Locked</gray>"

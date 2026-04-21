@@ -1,0 +1,23 @@
+id: example_vote_tokens
+enabled: false
+sort-order: 10
+display-name: "<gradient:#F6D365:#FDA085>Vote Token Exchange</gradient>"
+description:
+  - "<gray>Example trade file for 1MB-Trades.</gray>"
+  - "<gray>Use </gray><white>/_trade capture requirements example_vote_tokens</white>"
+  - "<gray>while your required items are in your main inventory.</gray>"
+permission: "onembtrade.%id%"
+completion-permission: ""
+max-trades: 1
+hide-when-completed: false
+ctext-file: "onembtrade-%id%"
+requirements: []
+icon-item: null
+reward-item: null
+commands:
+  open: []
+  info: []
+  success:
+    - "console:lp user %player% permission set onembtrade.kit.%id% true"
+    - 'console:cmi titlemsg %player% &6Trade Complete \n &fVote kit unlocked'
+  fail: []

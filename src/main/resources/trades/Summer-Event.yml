@@ -1,0 +1,26 @@
+id: summer_event
+enabled: true
+sort-order: 0
+display-name: "<gradient:#F6D365:#FDA085>Summer Event Trade</gradient>"
+description:
+  - "<gray>Example summer event trade bundled with 1MB-Trades.</gray>"
+  - "<gray>Set your own requirements, icon, reward preview, and commands.</gray>"
+  - "<gray>This bundled example is repeatable by default.</gray>"
+permission: "onembtrade.%id%"
+completion-permission: ""
+max-trades: -1
+hide-when-completed: false
+ctext-file: "summer-event"
+requirements: []
+icon-item:
+  ==: org.bukkit.inventory.ItemStack
+  v: 4189
+  type: CHERRY_SAPLING
+reward-item: null
+commands:
+  open: []
+  info: []
+  success:
+    - "console:cmi msg %player% ![trade] The trade has been successful. This example trade is repeatable while the event is active."
+  fail:
+    - "console:cmi msg %player% ![trade] The trade has failed, you were missing %missing_amount% item(s): %missing_items%"

@@ -1,0 +1,45 @@
+settings:
+  admin-permission: "onembtrade.admin"
+  trade-permission-prefix: "onembtrade."
+  global-alias: "summerevent"
+  global-command: "_trade open summer_event %player%"
+  locale-file: "Locale_EN.yml"
+  player-exp-placeholder: "%cmi_user_level%"
+  player-balance-placeholder: "%cmi_user_balance%"
+  close-on-success: true
+  send-plugin-result-messages: true
+
+gui:
+  filler:
+    material: "BLACK_STAINED_GLASS_PANE"
+  info-book:
+    material: "WRITTEN_BOOK"
+  trade-button:
+    material: "EMERALD"
+  back-button:
+    material: "ARROW"
+  close-button:
+    material: "BARRIER"
+  previous-page:
+    material: "SPECTRAL_ARROW"
+  next-page:
+    material: "SPECTRAL_ARROW"
+  page-indicator:
+    material: "PAPER"
+  ready-status:
+    material: "LIME_DYE"
+  missing-status:
+    material: "RED_DYE"
+  locked-status:
+    material: "GRAY_DYE"
+  reward-preview:
+    material: "NETHER_STAR"
+
+global-commands:
+  open-index: []
+  open-trade: []
+  info: []
+  success:
+    - "console:cmi sound ENTITY_PLAYER_LEVELUP -v:0.8 %player% -s"
+  fail:
+    - "console:cmi sound ENTITY_VILLAGER_NO -v:0.8 %player% -s"

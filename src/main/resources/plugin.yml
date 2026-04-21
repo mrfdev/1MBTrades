@@ -1,0 +1,20 @@
+name: 1MB-Trades
+main: com.onemoreblock.trades.OneMBTradesPlugin
+version: ${version}
+api-version: "1.21"
+author: Floris
+description: Custom trade menus and unique-item exchanges for 1MoreBlock.com
+softdepend:
+  - PlaceholderAPI
+  - CMI
+  - LuckPerms
+  - Vault
+commands:
+  _trade:
+    description: Open or manage 1MB trades
+    usage: /_trade [open|reload|debug|create|capture|set|toggle|command]
+permissions:
+  onembtrade.admin:
+    description: Allows use of all 1MB trade admin commands
+    default: op
+
