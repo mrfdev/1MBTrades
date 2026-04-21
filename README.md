@@ -7,14 +7,14 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 ## Current Build Metadata
 
 - Plugin version: `1.0.1`
-- Next build number in `version.properties`: `022`
+- Next build number in `version.properties`: `023`
 - Target Java: `25`
 - Target Minecraft: `1.21.11`
 - Artifact naming pattern: `1MB-Trades-v<pluginVersion>-<build>-j<java>-<minecraft>.jar`
 
 The latest built local artifact in this workspace is:
 
-- `build/libs/1MB-Trades-v1.0.1-021-j25-1.21.11.jar`
+- `build/libs/1MB-Trades-v1.0.1-022-j25-1.21.11.jar`
 
 ## Features
 
@@ -37,6 +37,7 @@ The latest built local artifact in this workspace is:
 - Admin trade audit logs and player trade result logs
 - Trade-file validation warnings on load and reload
 - MiniMessage support in locale and GUI text
+- MiniMessage-to-CMI conversion for text commands such as `cmi msg` and `cmi titlemsg`
 - MiniMessage tag escaping for item-derived placeholder text
 - PlaceholderAPI support where a player context exists
 - Internal PlaceholderAPI expansion with `%onembtrades_*%` placeholders
@@ -510,6 +511,8 @@ Trade command entries support these prefixes:
 - `message:` sends a MiniMessage or legacy-formatted chat message
 - `actionbar:` sends an action bar message
 
+When `console:` or `player:` dispatches a CMI text command, the plugin converts MiniMessage tags to Minecraft legacy color codes before CMI receives the command. This currently applies to `cmi msg`, `cmi titlemsg`, `cmi actionbarmsg`, `cmi bossbarmsg`, `cmi broadcast`, and `cmi toast`.
+
 ## Configuration Overview
 
 ### `config.yml`
@@ -645,8 +648,9 @@ If you want full control over the success and fail output, a good pattern is to:
 Examples:
 
 ```text
-console:cmi msg %player% ![trade] The trade has been successful, go to your favourite world and type /kit trade-%id% to collect it! (You can get this reward once)
-console:cmi msg %player% ![trade] The trade has failed, you were missing %missing_amount% item(s): %missing_items%
+console:cmi msg %player% !<gold>[trade]</gold> <yellow>The trade has been successful, go to your favourite world and type /kit trade-%id% to collect it! (You can get this reward once)</yellow>
+console:cmi msg %player% !<gold>[trade]</gold> <red>The trade has failed, you were missing %missing_amount% item(s): %missing_items%</red>
+console:cmi titlemsg %player% <gold>Trade Complete</gold> \n <white>%trade_name% unlocked</white>
 ```
 
 This lets CMI handle the exact chat style and prefix formatting.

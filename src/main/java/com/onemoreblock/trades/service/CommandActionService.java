@@ -117,6 +117,9 @@ public final class CommandActionService {
         }
 
         String resolved = placeholderService.apply(player, command, replacements);
+        if (usesDispatchedCommand(mode) && shouldRenderMiniMessageForCommand(resolved)) {
+            resolved = placeholderService.miniMessageToLegacySection(resolved);
+        }
         if (resolved.startsWith("/")) {
             resolved = resolved.substring(1);
         }
@@ -130,6 +133,34 @@ public final class CommandActionService {
             case MESSAGE -> player.sendMessage(placeholderService.component(player, resolved, Map.of()));
             case ACTIONBAR -> player.sendActionBar(placeholderService.component(player, resolved, Map.of()));
         }
+    }
+
+    private boolean usesDispatchedCommand(ExecutionMode mode) {
+        return mode == ExecutionMode.CONSOLE || mode == ExecutionMode.PLAYER;
+    }
+
+    private boolean shouldRenderMiniMessageForCommand(String command) {
+        if (!placeholderService.hasMiniMessageTags(command)) {
+            return false;
+        }
+
+        String normalized = command == null ? "" : command.trim();
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1).trim();
+        }
+        String lowered = normalized.toLowerCase(Locale.ROOT);
+        if (lowered.startsWith("cmi ")) {
+            lowered = lowered.substring("cmi ".length()).trim();
+        } else if (lowered.startsWith("cmi:")) {
+            lowered = lowered.substring("cmi:".length()).trim();
+        }
+
+        return lowered.startsWith("msg ")
+            || lowered.startsWith("titlemsg ")
+            || lowered.startsWith("actionbarmsg ")
+            || lowered.startsWith("bossbarmsg ")
+            || lowered.startsWith("broadcast ")
+            || lowered.startsWith("toast ");
     }
 
     private void dispatch(CommandSender sender, String command) {

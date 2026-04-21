@@ -28,6 +28,6 @@ commands:
   open: []
   info: []
   success:
-    - "console:cmi msg %player% ![trade] The trade has been successful. This example trade is repeatable while the event is active."
+    - "console:cmi msg %player% !<gold>[trade]</gold> <yellow>The trade has been successful. This example trade is repeatable while the event is active.</yellow>"
   fail:
-    - "console:cmi msg %player% ![trade] The trade has failed, you were missing %missing_amount% item(s): %missing_items%"
+    - "console:cmi msg %player% !<gold>[trade]</gold> <red>The trade has failed, you were missing %missing_amount% item(s): %missing_items%</red>"

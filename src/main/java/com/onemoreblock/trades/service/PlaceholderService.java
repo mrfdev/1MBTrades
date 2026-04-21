@@ -89,6 +89,22 @@ public final class PlaceholderService {
         return legacySectionSerializer.serialize(component(player, input, replacements));
     }
 
+    public String miniMessageToLegacySection(String input) {
+        if (input == null || input.isBlank() || !looksLikeMiniMessage(input)) {
+            return input == null ? "" : input;
+        }
+        try {
+            return legacySectionSerializer.serialize(miniMessage.deserialize(input));
+        } catch (RuntimeException exception) {
+            plugin.getLogger().warning("Failed to render MiniMessage command text: " + exception.getMessage());
+            return input;
+        }
+    }
+
+    public boolean hasMiniMessageTags(String input) {
+        return input != null && looksLikeMiniMessage(input);
+    }
+
     public String plainText(Player player, String input, Map<String, String> replacements) {
         return plainSerializer.serialize(component(player, input, replacements));
     }
