@@ -93,6 +93,10 @@ public final class PlaceholderService {
         return plainSerializer.serialize(component(player, input, replacements));
     }
 
+    public String escapeMiniMessageTokens(String input) {
+        return input == null ? "" : miniMessage.escapeTags(input);
+    }
+
     public String resolveExternalPlaceholder(Player player, String placeholderText, String fallback) {
         if (placeholderText == null || placeholderText.isBlank()) {
             return fallback;

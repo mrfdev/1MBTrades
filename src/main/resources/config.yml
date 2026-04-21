@@ -8,6 +8,9 @@ settings:
   player-balance-placeholder: "%cmi_user_balance%"
   close-on-success: true
   send-plugin-result-messages: true
+  trade-click-cooldown-ms: 750
+  hide-completed-on-direct-open: true
+  blacklisted-worlds: []
 
 gui:
   filler:

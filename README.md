@@ -6,15 +6,15 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 
 ## Current Build Metadata
 
-- Plugin version: `1.0.0`
-- Next build number in `version.properties`: `021`
+- Plugin version: `1.0.1`
+- Next build number in `version.properties`: `022`
 - Target Java: `25`
 - Target Minecraft: `1.21.11`
 - Artifact naming pattern: `1MB-Trades-v<pluginVersion>-<build>-j<java>-<minecraft>.jar`
 
 The latest built local artifact in this workspace is:
 
-- `build/libs/1MB-Trades-v1.0.0-020-j25-1.21.11.jar`
+- `build/libs/1MB-Trades-v1.0.1-021-j25-1.21.11.jar`
 
 ## Features
 
@@ -25,14 +25,25 @@ The latest built local artifact in this workspace is:
 - Per-trade permission and completion permission support
 - UUID-based player usage tracking in `plugins/1MB-Trades/playerData/`
 - Per-trade usage caps for one-time or repeatable trades
+- Per-trade categories and category-specific trade indexes
+- Per-trade allowed-world lists plus a global world blacklist
+- Optional per-trade money and EXP costs
+- Per-trade start and end dates
+- Per-trade hide-when-completed support
 - Per-trade info entry via CMI `ctext`
 - Global command hooks for open, success, and fail flows
+- Trade click cooldown and anti-spam protection
+- GUI requirement progress lines for collected items
+- Admin trade audit logs and player trade result logs
+- Trade-file validation warnings on load and reload
 - MiniMessage support in locale and GUI text
+- MiniMessage tag escaping for item-derived placeholder text
 - PlaceholderAPI support where a player context exists
 - Internal PlaceholderAPI expansion with `%onembtrades_*%` placeholders
-- Admin commands to create trades and capture items directly from in-game inventory
+- Admin commands to create, clone, delete, dry-run, and capture trades directly from in-game inventory
 - Trade files stored individually in `plugins/1MB-Trades/Trades/`
 - Player usage files stored individually in `plugins/1MB-Trades/playerData/`
+- Log files stored in `plugins/1MB-Trades/logs/`
 - Locale files stored in `plugins/1MB-Trades/Translations/`
 - Automatic normalization of legacy `trades/` folder naming to `Trades/`
 
@@ -44,6 +55,9 @@ Inside your Paper server folder:
 plugins/
   1MB-Trades/
     config.yml
+    logs/
+      admin-actions.log
+      player-trades.log
     playerData/
       <uuid>.yml
     Translations/
@@ -129,13 +143,17 @@ Player-facing:
 
 - `/_trade`
 - `/_trade open [trade] [player]`
+- `/_trade open category <category> [player]`
 
 Admin-only, guarded by `onembtrade.admin`:
 
 - `/_trade reload`
 - `/_trade debug [trade]`
+- `/_trade debug player <player>`
 - `/_trade debug <trade> reset <player|all>`
 - `/_trade create <id>`
+- `/_trade clone <source> <newId>`
+- `/_trade delete <trade>`
 - `/_trade capture requirements <trade>`
 - `/_trade capture icon <trade>`
 - `/_trade capture reward <trade>`
@@ -144,11 +162,19 @@ Admin-only, guarded by `onembtrade.admin`:
 - `/_trade set permission <trade> <value>`
 - `/_trade set completion <trade> <value>`
 - `/_trade set max <trade> <number|-1|unlimited>`
+- `/_trade set hide <trade> <true|false>`
+- `/_trade set worlds <trade> <global|world1,world2>`
+- `/_trade set money <trade> <amount>`
+- `/_trade set exp <trade> <levels>`
+- `/_trade set start <trade> <MM-dd-yyyy|yyyy-MM-dd|none>`
+- `/_trade set end <trade> <MM-dd-yyyy|yyyy-MM-dd|none>`
+- `/_trade set category <trade> <value>`
 - `/_trade set ctext <trade> <value>`
 - `/_trade set sort <trade> <number>`
 - `/_trade toggle <trade> <true|false>`
 - `/_trade command add <trade> <open|info|success|fail> <command>`
 - `/_trade command clear <trade> <open|info|success|fail>`
+- `/_trade test <trade> [player]`
 
 ## Command Examples
 
@@ -204,6 +230,31 @@ Set the trade to one-time, limited, or unlimited:
 /_trade set max summer_event unlimited
 ```
 
+Set visibility, category, and world restrictions:
+
+```bash
+/_trade set hide summer_event true
+/_trade set category summer_event summer
+/_trade set worlds summer_event spawn,wild
+/_trade open category summer
+```
+
+Set optional money and EXP costs:
+
+```bash
+/_trade set money summer_event 25000
+/_trade set exp summer_event 5
+```
+
+Set date windows:
+
+```bash
+/_trade set start summer_event 06-01-2027
+/_trade set end summer_event 08-31-2027
+```
+
+The command parser also accepts ISO-style dates such as `2027-06-01`.
+
 Add a reward command:
 
 ```bash
@@ -214,6 +265,20 @@ Enable a disabled trade:
 
 ```bash
 /_trade toggle example_vote_tokens true
+```
+
+Clone or delete a trade:
+
+```bash
+/_trade clone summer_event summer_event_weekend
+/_trade delete summer_event_weekend
+```
+
+Dry-run a trade without consuming anything:
+
+```bash
+/_trade test summer_event
+/_trade test summer_event mrfloris
 ```
 
 Reset tracked usage for one player or for all tracked players:
@@ -274,11 +339,20 @@ Core placeholders available in trade commands and trade text:
 - `%trade_id%`
 - `%trade_name%`
 - `%trade_description%`
+- `%category%`
 - `%trade_permission%`
 - `%ctext_file%`
+- `%allowed_worlds%`
+- `%current_world%`
 - `%required_items%`
 - `%item_cost%`
 - `%requirements_count%`
+- `%money_cost%`
+- `%exp_cost%`
+- `%player_money%`
+- `%player_level%`
+- `%start_date%`
+- `%end_date%`
 - `%trade_uses%`
 - `%max_trades%`
 - `%max_uses%`
@@ -286,6 +360,9 @@ Core placeholders available in trade commands and trade text:
 - `%remaining_uses%`
 - `%missing_items%`
 - `%missing_amount%`
+- `%missing_money%`
+- `%missing_exp%`
+- `%missing_summary%`
 
 Alias placeholders for `settings.global-command`:
 
@@ -304,6 +381,9 @@ GUI and locale placeholders:
 - `%trade_file%`
 - `%player_exp%`
 - `%player_balance%`
+- `%owned_amount%`
+- `%required_amount%`
+- `%item_missing_amount%`
 
 When PlaceholderAPI is installed, any PlaceholderAPI placeholder can also be used where the plugin has a player context.
 
@@ -365,6 +445,12 @@ Per-trade fields currently available:
 - `permission`
 - `completion_permission`
 - `ctext_file`
+- `category`
+- `allowed_worlds`
+- `money_cost`
+- `exp_cost`
+- `start_date`
+- `end_date`
 - `requirements_count`
 - `item_cost`
 - `item_cost_summary`
@@ -378,6 +464,9 @@ Per-trade fields currently available:
 - `icon_item`
 - `status`
 - `status_key`
+- `current_world`
+- `player_money`
+- `player_level`
 - `can_access`
 - `can_access_raw`
 - `can_trade`
@@ -386,11 +475,14 @@ Per-trade fields currently available:
 - `completed_raw`
 - `missing_items`
 - `missing_amount`
+- `missing_money`
+- `missing_exp`
+- `missing_summary`
 
 Status output notes:
 
-- `status` returns text such as `Ready`, `Collecting`, `Unlocked`, `Limit Reached`, `Locked`, `Disabled`, or `Enabled`
-- `status_key` returns lowercase keys such as `ready`, `collecting`, `unlocked`, `limit_reached`, `locked`, `disabled`, or `enabled`
+- `status` returns text such as `Ready`, `Collecting`, `Unlocked`, `Limit Reached`, `Scheduled`, `Expired`, `Locked`, `Disabled`, or `Enabled`
+- `status_key` returns lowercase keys such as `ready`, `collecting`, `unlocked`, `limit_reached`, `scheduled`, `expired`, `locked`, `disabled`, or `enabled`
 
 Boolean output notes:
 
@@ -430,8 +522,12 @@ Global operational settings:
 - target locale file
 - player level and balance placeholders
 - UUID-based playerData tracking
+- global blacklisted worlds
+- trade click cooldown in milliseconds
+- optional hide-completed behavior for direct trade opens
 - optional built-in result message toggle
 - GUI materials
+- audit log files in `logs/`
 - global commands for:
   - `open-index`
   - `open-trade`
@@ -445,6 +541,11 @@ Example alias configuration:
 settings:
   global-alias: "summerevent"
   global-command: "_trade open summer_event %player%"
+  blacklisted-worlds:
+    - "spawn"
+    - "spawn_nether"
+  trade-click-cooldown-ms: 750
+  hide-completed-on-direct-open: true
   send-plugin-result-messages: false
 ```
 
@@ -490,6 +591,7 @@ Example:
 id: summer_event
 enabled: true
 sort-order: 0
+category: summer
 display-name: "<gold>Summer Event Trade</gold>"
 description:
   - "<gray>Collect the event items and trade them here.</gray>"
@@ -497,6 +599,12 @@ permission: "onembtrade.%id%"
 completion-permission: ""
 max-trades: -1
 hide-when-completed: false
+allowed-worlds:
+  - global
+money-cost: 0
+exp-cost: 0
+start-date: ""
+end-date: ""
 ctext-file: "onembtrade-%id%"
 requirements: []
 icon-item: null
@@ -514,9 +622,14 @@ Notes:
 
 - `id` must be unique
 - `id` should use lowercase letters, numbers, underscores, and hyphens only
+- `category` can be used with `/_trade open category <category>`
 - `%id%` can be reused in `permission`, `completion-permission`, `ctext-file`, and command strings
 - `max-trades: 1` is a one-time trade
 - `max-trades: -1` makes the trade repeatable without a cap
+- `allowed-worlds: [global]` means any world except those in the global blacklist
+- `allowed-worlds: [spawn, wild]` restricts trading to those worlds, unless one is also globally blacklisted
+- `money-cost` and `exp-cost` default to `0`
+- `start-date` and `end-date` accept `MM-dd-yyyy` or `yyyy-MM-dd`
 - if `max-trades` is missing in an older trade file, the plugin treats it as `1`
 - successful trades are tracked per player UUID in `playerData/<uuid>.yml`
 - existing one-time rewards can be synced once from `completion-permission:` into playerData for backward compatibility
@@ -540,6 +653,11 @@ This lets CMI handle the exact chat style and prefix formatting.
 
 If a trade already has a visible chat feedback command such as `message:` or `console:cmi msg ...`, the plugin now suppresses its own built-in result chat line automatically so players do not get duplicate success or fail messages.
 
+The plugin also keeps separate audit logs in:
+
+- `plugins/1MB-Trades/logs/admin-actions.log`
+- `plugins/1MB-Trades/logs/player-trades.log`
+
 ## Recommended Workflow
 
 1. Create the trade with `/_trade create <id>`.
@@ -547,12 +665,14 @@ If a trade already has a visible chat feedback command such as `message:` or `co
 3. Run `/_trade capture requirements <id>`.
 4. Hold the GUI icon in your main hand and run `/_trade capture icon <id>`.
 5. Hold the reward preview item in your main hand and run `/_trade capture reward <id>`.
-6. Set display, description, permission, completion permission, and ctext.
-7. Set `max-trades` to `1`, another number, or `-1` for repeatable trades.
-8. Add success and fail commands.
-9. Run `/_trade debug <id>`.
-10. Use `/_trade debug <id> reset <player|all>` when you need to clear tracked usage data.
-11. Run `/_trade reload` after manual YAML edits.
+6. Set display, description, category, permission, completion permission, and ctext.
+7. Set `max-trades`, `hide`, `worlds`, and optional `money` or `exp` costs.
+8. Add optional `start` and `end` dates.
+9. Add success and fail commands.
+10. Run `/_trade test <id>` for a dry-run before going live.
+11. Run `/_trade debug <id>`.
+12. Use `/_trade debug <id> reset <player|all>` when you need to clear tracked usage data.
+13. Run `/_trade reload` after manual YAML edits.
 
 ## Support
 
@@ -573,7 +693,7 @@ cd ~/Projects/Codex/1MBTrades
 git init
 git branch -M main
 git add .
-git commit -m "Initial commit: 1MB-Trades v1.0.0"
+git commit -m "Initial commit: 1MB-Trades v1.0.1"
 git remote add origin https://github.com/mrfdev/1MBTrades.git
 git push -u origin main
 ```
@@ -593,6 +713,16 @@ git push -u origin main
 - Built for the 1MoreBlock Minecraft server network and its event, vote, and kit-trade workflows.
 - Development was mainly realized with the help of [OpenAI](https://openai.com/).
 - Community and project home: [discord.gg/floris](https://discord.gg/floris)
+
+## TODO
+
+Deferred items that are intentionally shelved for a later milestone:
+
+- Add automated smoke and regression testing for the Paper `1.21.11` and `26.1.2` test servers.
+- Explore optional hidden item fingerprinting with PersistentDataContainer for stronger anti-counterfeit item matching.
+- Consider cooldown-based repeat-trade controls that are separate from `max-trades`.
+- Consider reusable reward presets or grouped reward packages for multiple trades.
+- Evaluate whether more `%onembtrades_*%` statistics should be exposed, especially around resets and long-term usage reporting.
 
 ## Notes For Future Maintenance
 

@@ -1,6 +1,7 @@
 id: summer_event
 enabled: true
 sort-order: 0
+category: summer
 display-name: "<gradient:#F6D365:#FDA085>Summer Event Trade</gradient>"
 description:
   - "<gray>Example summer event trade bundled with 1MB-Trades.</gray>"
@@ -10,6 +11,12 @@ permission: "onembtrade.%id%"
 completion-permission: ""
 max-trades: -1
 hide-when-completed: false
+allowed-worlds:
+  - global
+money-cost: 0
+exp-cost: 0
+start-date: ""
+end-date: ""
 ctext-file: "summer-event"
 requirements: []
 icon-item:

@@ -137,6 +137,17 @@ public final class PlayerTradeDataStore {
         return Optional.empty();
     }
 
+    public Map<String, Integer> usageCounts(UUID uuid) {
+        PlayerTradeProfile profile = loadProfile(uuid);
+        Map<String, Integer> usages = new LinkedHashMap<>();
+        profile.tradeProgress().forEach((tradeId, progress) -> {
+            if (progress.uses() > 0) {
+                usages.put(tradeId, progress.uses());
+            }
+        });
+        return usages;
+    }
+
     private Collection<UUID> knownProfileIds() {
         List<UUID> uuids = new ArrayList<>(profiles.keySet());
         try (Stream<Path> files = Files.list(playerDataDirectory)) {

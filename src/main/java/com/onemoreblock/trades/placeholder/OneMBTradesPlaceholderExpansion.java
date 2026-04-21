@@ -105,6 +105,7 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             case "display_formatted", "name_formatted" -> formattedTradeName(player, trade);
             case "display_name_plain", "name_plain" -> plainTradeName(player, trade);
             case "id", "trade_id" -> trade.id();
+            case "category" -> trade.category();
             case "enabled" -> yesNo(trade.enabled());
             case "enabled_raw" -> String.valueOf(trade.enabled());
             case "sort", "sort_order" -> String.valueOf(trade.sortOrder());
@@ -113,6 +114,11 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             case "permission", "trade_permission" -> tradeManager.effectivePermission(trade);
             case "completion_permission" -> tradeManager.effectiveCompletionPermission(trade);
             case "ctext", "ctext_file" -> tradeManager.effectiveCtextFile(trade);
+            case "allowed_worlds" -> tradeManager.allowedWorldsDescription(trade);
+            case "money_cost" -> tradeManager.formatMoney(trade.moneyCost());
+            case "exp_cost" -> String.valueOf(trade.expCost());
+            case "start_date" -> tradeManager.formattedDate(trade.startDate());
+            case "end_date" -> tradeManager.formattedDate(trade.endDate());
             case "requirements", "requirements_count" -> String.valueOf(trade.requirements().size());
             case "item_cost" -> String.valueOf(totalItemAmount(trade.requirements()));
             case "item_cost_summary", "required_items", "required_items_summary" -> tradeManager.summarizeItems(trade.requirements());
@@ -123,6 +129,9 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             case "icon_item" -> trade.iconItem() == null ? "" : placeholderService.plainItemName(trade.iconItem());
             case "status" -> statusText(player, trade, result);
             case "status_key" -> statusKey(player, trade, result);
+            case "current_world" -> player == null ? "" : player.getWorld().getName();
+            case "player_money" -> player == null ? "" : tradeManager.formatMoney(tradeManager.playerBalance(player));
+            case "player_level" -> player == null ? "" : String.valueOf(player.getLevel());
             case "can_access" -> player == null ? "" : yesNo(trade.enabled() && tradeManager.hasAccess(player, trade, false));
             case "can_access_raw" -> player == null ? "" : String.valueOf(trade.enabled() && tradeManager.hasAccess(player, trade, false));
             case "can_trade" -> player == null || result == null ? "" : yesNo(result.success());
@@ -131,6 +140,9 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             case "completed_raw" -> player == null ? "" : String.valueOf(tradeManager.isCompleted(player, trade));
             case "missing_items" -> player == null || result == null ? "" : tradeManager.summarizeItems(result.missingItems());
             case "missing_amount" -> player == null || result == null ? "" : String.valueOf(totalItemAmount(result.missingItems()));
+            case "missing_money" -> player == null || result == null ? "" : tradeManager.formatMoney(result.missingMoney());
+            case "missing_exp" -> player == null || result == null ? "" : String.valueOf(result.missingExpLevels());
+            case "missing_summary" -> player == null || result == null ? "" : tradeManager.summarizeMissingRequirements(result);
             default -> null;
         };
     }
@@ -175,21 +187,32 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             "remaining_trades",
             "remaining_uses",
             "requirements_count",
+            "allowed_worlds",
             "can_access_raw",
             "can_trade_raw",
             "completed_raw",
             "display_name_plain",
             "status_key",
             "sort_order",
+            "missing_summary",
+            "missing_money",
+            "player_money",
+            "player_level",
             "missing_amount",
             "missing_items",
             "trade_permission",
             "ctext_file",
             "reward_preview",
             "reward_item",
+            "money_cost",
+            "start_date",
+            "end_date",
+            "category",
+            "exp_cost",
             "can_access",
             "can_trade",
             "completed",
+            "current_world",
             "icon_item",
             "item_cost",
             "max_trades",
@@ -241,6 +264,7 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             "id", trade.id(),
             "trade_id", trade.id(),
             "trade_name", trade.displayName(),
+            "category", trade.category(),
             "trade_permission", tradeManager.effectivePermission(trade),
             "ctext_file", tradeManager.effectiveCtextFile(trade)
         );
@@ -277,6 +301,8 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
             case "collecting" -> "Collecting";
             case "unlocked" -> "Unlocked";
             case "limit_reached" -> "Limit Reached";
+            case "scheduled" -> "Scheduled";
+            case "expired" -> "Expired";
             case "locked" -> "Locked";
             case "disabled" -> "Disabled";
             case "enabled" -> "Enabled";
@@ -290,10 +316,12 @@ public final class OneMBTradesPlaceholderExpansion extends PlaceholderExpansion 
         }
         return switch (result.status()) {
             case SUCCESS -> "ready";
-            case MISSING_ITEMS -> "collecting";
+            case MISSING_REQUIREMENTS -> "collecting";
             case ALREADY_COMPLETED -> trade.maxTrades() == 1 ? "unlocked" : "limit_reached";
+            case NOT_STARTED -> "scheduled";
+            case EXPIRED -> "expired";
             case DISABLED -> "disabled";
-            case NO_PERMISSION -> "locked";
+            case WORLD_BLOCKED, NO_PERMISSION -> "locked";
         };
     }
 

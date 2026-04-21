@@ -145,12 +145,22 @@ public final class CommandActionService {
             int tradeUses = tradeManager.tradeUses(player, trade);
             String maxTrades = tradeManager.formattedMaxTrades(trade);
             String remainingTrades = tradeManager.formattedRemainingTrades(player, trade);
+            double balance = tradeManager.playerBalance(player);
             replacements.put("id", trade.id());
             replacements.put("trade_id", trade.id());
             replacements.put("trade_name", trade.displayName());
             replacements.put("trade_description", String.join(" ", trade.description()));
+            replacements.put("category", trade.category());
             replacements.put("trade_permission", tradeManager.effectivePermission(trade));
             replacements.put("ctext_file", tradeManager.effectiveCtextFile(trade));
+            replacements.put("allowed_worlds", tradeManager.allowedWorldsDescription(trade));
+            replacements.put("money_cost", tradeManager.formatMoney(trade.moneyCost()));
+            replacements.put("exp_cost", String.valueOf(trade.expCost()));
+            replacements.put("start_date", tradeManager.formattedDate(trade.startDate()));
+            replacements.put("end_date", tradeManager.formattedDate(trade.endDate()));
+            replacements.put("player_money", tradeManager.formatMoney(balance));
+            replacements.put("player_level", String.valueOf(player.getLevel()));
+            replacements.put("current_world", player.getWorld().getName());
             replacements.put("requirements_count", String.valueOf(trade.requirements().size()));
             replacements.put("required_items", tradeManager.summarizeItems(trade.requirements()));
             replacements.put("item_cost", String.valueOf(tradeManager.totalItemAmount(trade.requirements())));
@@ -164,8 +174,17 @@ public final class CommandActionService {
             replacements.put("trade_id", "");
             replacements.put("trade_name", "");
             replacements.put("trade_description", "");
+            replacements.put("category", "");
             replacements.put("trade_permission", "");
             replacements.put("ctext_file", "");
+            replacements.put("allowed_worlds", "");
+            replacements.put("money_cost", "0");
+            replacements.put("exp_cost", "0");
+            replacements.put("start_date", "");
+            replacements.put("end_date", "");
+            replacements.put("player_money", "0");
+            replacements.put("player_level", player == null ? "0" : String.valueOf(player.getLevel()));
+            replacements.put("current_world", player == null ? "" : player.getWorld().getName());
             replacements.put("requirements_count", "0");
             replacements.put("required_items", "");
             replacements.put("item_cost", "0");
@@ -177,6 +196,9 @@ public final class CommandActionService {
         }
         replacements.putIfAbsent("missing_items", "");
         replacements.putIfAbsent("missing_amount", "0");
+        replacements.putIfAbsent("missing_money", "0");
+        replacements.putIfAbsent("missing_exp", "0");
+        replacements.putIfAbsent("missing_summary", "");
         return replacements;
     }
 

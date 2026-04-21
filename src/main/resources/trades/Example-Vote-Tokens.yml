@@ -1,6 +1,7 @@
 id: example_vote_tokens
 enabled: false
 sort-order: 10
+category: vote
 display-name: "<gradient:#F6D365:#FDA085>Vote Token Exchange</gradient>"
 description:
   - "<gray>Example trade file for 1MB-Trades.</gray>"
@@ -10,6 +11,12 @@ permission: "onembtrade.%id%"
 completion-permission: ""
 max-trades: 1
 hide-when-completed: false
+allowed-worlds:
+  - global
+money-cost: 0
+exp-cost: 0
+start-date: ""
+end-date: ""
 ctext-file: "onembtrade-%id%"
 requirements: []
 icon-item: null

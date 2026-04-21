@@ -3,18 +3,23 @@ package com.onemoreblock.trades.command;
 import com.onemoreblock.trades.OneMBTradesPlugin;
 import com.onemoreblock.trades.config.PluginSettings;
 import com.onemoreblock.trades.gui.TradeGuiService;
+import com.onemoreblock.trades.model.TradeCheckResult;
 import com.onemoreblock.trades.model.TradeDefinition;
 import com.onemoreblock.trades.model.TradeTrigger;
+import com.onemoreblock.trades.service.AuditLogService;
 import com.onemoreblock.trades.service.CommandActionService;
 import com.onemoreblock.trades.service.PlaceholderService;
 import com.onemoreblock.trades.service.TradeManager;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
@@ -34,19 +39,22 @@ public final class TradeCommand implements TabExecutor, Listener {
     private final TradeGuiService tradeGuiService;
     private final CommandActionService commandActionService;
     private final PlaceholderService placeholderService;
+    private final AuditLogService auditLogService;
 
     public TradeCommand(
         OneMBTradesPlugin plugin,
         TradeManager tradeManager,
         TradeGuiService tradeGuiService,
         CommandActionService commandActionService,
-        PlaceholderService placeholderService
+        PlaceholderService placeholderService,
+        AuditLogService auditLogService
     ) {
         this.plugin = plugin;
         this.tradeManager = tradeManager;
         this.tradeGuiService = tradeGuiService;
         this.commandActionService = commandActionService;
         this.placeholderService = placeholderService;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -67,10 +75,13 @@ public final class TradeCommand implements TabExecutor, Listener {
                 case "reload" -> handleReload(sender);
                 case "debug" -> handleDebug(sender, Arrays.copyOfRange(args, 1, args.length));
                 case "create" -> handleCreate(sender, Arrays.copyOfRange(args, 1, args.length));
+                case "clone" -> handleClone(sender, Arrays.copyOfRange(args, 1, args.length));
+                case "delete" -> handleDelete(sender, Arrays.copyOfRange(args, 1, args.length));
                 case "capture" -> handleCapture(sender, Arrays.copyOfRange(args, 1, args.length));
                 case "set" -> handleSet(sender, Arrays.copyOfRange(args, 1, args.length));
                 case "toggle" -> handleToggle(sender, Arrays.copyOfRange(args, 1, args.length));
                 case "command" -> handleCommandSubcommand(sender, Arrays.copyOfRange(args, 1, args.length));
+                case "test" -> handleTest(sender, Arrays.copyOfRange(args, 1, args.length));
                 case "help" -> {
                     sendHelp(sender);
                     yield true;
@@ -89,44 +100,66 @@ public final class TradeCommand implements TabExecutor, Listener {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return filter(List.of("open", "reload", "debug", "create", "capture", "set", "toggle", "command", "help"), args[0]);
+            return filter(List.of("open", "reload", "debug", "create", "clone", "delete", "capture", "set", "toggle", "command", "test", "help"), args[0]);
         }
         if (args.length == 2) {
             return switch (args[0].toLowerCase(Locale.ROOT)) {
-                case "open" -> filter(Stream.concat(Stream.of("index"), tradeManager.tradeIds().stream()).toList(), args[1]);
-                case "debug" -> filter(Stream.concat(Stream.of("index"), tradeManager.tradeIds().stream()).toList(), args[1]);
-                case "toggle" -> filter(tradeManager.tradeIds(), args[1]);
+                case "open" -> filter(Stream.concat(Stream.of("index", "category"), tradeManager.tradeIds().stream()).toList(), args[1]);
+                case "debug" -> filter(Stream.concat(Stream.of("index", "player"), tradeManager.tradeIds().stream()).toList(), args[1]);
+                case "toggle", "delete", "test" -> filter(tradeManager.tradeIds(), args[1]);
+                case "clone" -> filter(tradeManager.tradeIds(), args[1]);
                 case "capture" -> filter(List.of("requirements", "icon", "reward"), args[1]);
-                case "set" -> filter(List.of("display", "description", "permission", "completion", "max", "ctext", "sort"), args[1]);
+                case "set" -> filter(List.of("display", "description", "permission", "completion", "max", "ctext", "sort", "hide", "worlds", "money", "exp", "start", "end", "category"), args[1]);
                 case "command" -> filter(List.of("add", "clear"), args[1]);
                 default -> List.of();
             };
         }
         if (args.length == 3) {
             return switch (args[0].toLowerCase(Locale.ROOT)) {
-                case "open" -> filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
-                case "debug" -> "reset".startsWith(args[2].toLowerCase(Locale.ROOT)) && !"index".equalsIgnoreCase(args[1])
-                    ? List.of("reset")
-                    : List.of();
-                case "capture", "set" -> filter(tradeManager.tradeIds(), args[2]);
+                case "open" -> switch (args[1].toLowerCase(Locale.ROOT)) {
+                    case "category" -> filter(tradeManager.tradeCategories(), args[2]);
+                    case "index" -> filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
+                    default -> filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
+                };
+                case "debug" -> {
+                    if ("player".equalsIgnoreCase(args[1])) {
+                        yield filter(debugResetTargets(), args[2]);
+                    }
+                    yield "reset".startsWith(args[2].toLowerCase(Locale.ROOT)) && !"index".equalsIgnoreCase(args[1])
+                        ? List.of("reset")
+                        : List.of();
+                }
+                case "clone", "capture", "set" -> filter(tradeManager.tradeIds(), args[2]);
                 case "toggle" -> filter(List.of("true", "false"), args[2]);
+                case "delete" -> "confirm".startsWith(args[2].toLowerCase(Locale.ROOT)) ? List.of("confirm") : List.of();
                 case "command" -> switch (args[1].toLowerCase(Locale.ROOT)) {
                     case "add", "clear" -> filter(tradeManager.tradeIds(), args[2]);
                     default -> List.of();
                 };
+                case "test" -> filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
                 default -> List.of();
             };
         }
         if (args.length == 4) {
             return switch (args[0].toLowerCase(Locale.ROOT)) {
+                case "open" -> "category".equalsIgnoreCase(args[1])
+                    ? filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[3])
+                    : List.of();
                 case "set" -> switch (args[1].toLowerCase(Locale.ROOT)) {
                     case "sort" -> filter(List.of("0", "10", "20"), args[3]);
                     case "max" -> filter(List.of("1", "3", "5", "-1", "unlimited"), args[3]);
+                    case "hide" -> filter(List.of("true", "false"), args[3]);
+                    case "worlds" -> filter(List.of("global"), args[3]);
+                    case "money" -> filter(List.of("0", "25000", "50000"), args[3]);
+                    case "exp" -> filter(List.of("0", "5", "10"), args[3]);
+                    case "start", "end" -> filter(List.of("01-14-2027", "02-14-2027", "12-25-2027", "none"), args[3]);
+                    case "category" -> filter(List.of("general", "summer", "vote", "christmas"), args[3]);
                     default -> List.of();
                 };
                 case "debug" -> "reset".equalsIgnoreCase(args[2])
                     ? filter(debugResetTargets(), args[3])
                     : List.of();
+                case "delete" -> List.of();
                 case "command" -> filter(TradeTrigger.perTradeTriggers().stream().map(TradeTrigger::tradeConfigKey).toList(), args[3]);
                 default -> List.of();
             };
@@ -165,8 +198,7 @@ public final class TradeCommand implements TabExecutor, Listener {
     private boolean handleFallbackOpen(CommandSender sender, String possibleTradeId) {
         Optional<TradeDefinition> trade = tradeManager.findTrade(possibleTradeId);
         if (trade.isPresent() && sender instanceof Player player) {
-            tradeGuiService.openTrade(player, trade.get(), 0);
-            return true;
+            return openTradeDirect(sender, player, trade.get(), null);
         }
         if (sender instanceof Player player) {
             tradeGuiService.openIndex(player);
@@ -188,6 +220,27 @@ public final class TradeCommand implements TabExecutor, Listener {
             return true;
         }
 
+        if ("category".equalsIgnoreCase(args[0])) {
+            if (args.length < 2) {
+                throw new IllegalArgumentException("Provide a category name.");
+            }
+            Player target = resolveOpenTarget(sender, senderPlayer, args.length >= 3 ? args[2] : null);
+            if (target == null) {
+                return true;
+            }
+            tradeGuiService.openIndex(target, 0, args[1]);
+            return true;
+        }
+
+        if ("index".equalsIgnoreCase(args[0])) {
+            Player target = resolveOpenTarget(sender, senderPlayer, args.length >= 2 ? args[1] : null);
+            if (target == null) {
+                return true;
+            }
+            tradeGuiService.openIndex(target);
+            return true;
+        }
+
         if (args.length == 1) {
             Optional<TradeDefinition> trade = tradeManager.findTrade(args[0]);
             if (trade.isPresent()) {
@@ -195,8 +248,7 @@ public final class TradeCommand implements TabExecutor, Listener {
                     placeholderService.sendMessage(sender, null, plugin.settings().consoleNeedsPlayerMessage(), Map.of());
                     return true;
                 }
-                tradeGuiService.openTrade(senderPlayer, trade.get(), 0);
-                return true;
+                return openTradeDirect(sender, senderPlayer, trade.get(), null);
             }
 
             Player target = Bukkit.getPlayerExact(args[0]);
@@ -218,24 +270,17 @@ public final class TradeCommand implements TabExecutor, Listener {
             return true;
         }
 
-        String first = args[0];
-        String targetName = args[1];
-        Player target = Bukkit.getPlayerExact(targetName);
+        Player target = resolveOpenTarget(sender, senderPlayer, args[1]);
         if (target == null) {
-            placeholderService.sendMessage(sender, senderPlayer, plugin.settings().playerNotFoundMessage(), Map.of("target", targetName));
-            return true;
-        }
-        if (senderPlayer != null && !senderPlayer.getUniqueId().equals(target.getUniqueId()) && !hasAdmin(sender)) {
-            placeholderService.sendMessage(sender, senderPlayer, plugin.settings().noPermissionMessage(), Map.of());
             return true;
         }
 
-        Optional<TradeDefinition> trade = "index".equalsIgnoreCase(first) ? Optional.empty() : tradeManager.findTrade(first);
+        Optional<TradeDefinition> trade = tradeManager.findTrade(args[0]);
         if (trade.isPresent()) {
-            tradeGuiService.openTrade(target, trade.get(), 0);
-        } else {
-            tradeGuiService.openIndex(target);
+            return openTradeDirect(sender, target, trade.get(), null);
         }
+
+        tradeGuiService.openIndex(target);
         return true;
     }
 
@@ -244,7 +289,11 @@ public final class TradeCommand implements TabExecutor, Listener {
             return true;
         }
         plugin.reloadPluginState();
+        auditLogService.logAdminAction(sender, "reload", Map.of("warnings", String.valueOf(tradeManager.validationWarnings().size())));
         placeholderService.sendMessage(sender, sender instanceof Player player ? player : null, plugin.settings().reloadCompleteMessage(), Map.of());
+        if (!tradeManager.validationWarnings().isEmpty()) {
+            sendSystemLine(sender, "<yellow>Validation warnings:</yellow> <white>%count%</white>", Map.of("count", String.valueOf(tradeManager.validationWarnings().size())));
+        }
         return true;
     }
 
@@ -265,39 +314,63 @@ public final class TradeCommand implements TabExecutor, Listener {
             sendSystemLine(sender, "<gray>Locale file:</gray> <white>%value%</white>", Map.of("value", plugin.settings().localeFileName()));
             sendSystemLine(sender, "<gray>Trades loaded:</gray> <white>%value%</white>", Map.of("value", String.valueOf(tradeManager.allTrades().size())));
             sendSystemLine(sender, "<gray>Tracked players:</gray> <white>%value%</white>", Map.of("value", String.valueOf(tradeManager.trackedPlayersCount())));
+            sendSystemLine(sender, "<gray>Validation warnings:</gray> <white>%value%</white>", Map.of("value", String.valueOf(tradeManager.validationWarnings().size())));
             sendSystemLine(sender, "<gray>Admin permission:</gray> <white>%value%</white>", Map.of("value", plugin.settings().adminPermission()));
             sendSystemLine(sender, "<gray>Trade prefix:</gray> <white>%value%</white>", Map.of("value", plugin.settings().tradePermissionPrefix()));
             sendSystemLine(sender, "<gray>Global alias:</gray> <white>%value%</white>", Map.of("value", plugin.settings().globalAlias()));
             sendSystemLine(sender, "<gray>Global command:</gray> <white>%value%</white>", Map.of("value", plugin.settings().globalCommand()));
+            sendSystemLine(sender, "<gray>Blacklisted worlds:</gray> <white>%value%</white>", Map.of("value", String.join(", ", plugin.settings().blacklistedWorlds())));
+            sendSystemLine(sender, "<gray>Trade click cooldown:</gray> <white>%value% ms</white>", Map.of("value", String.valueOf(plugin.settings().tradeClickCooldownMillis())));
+            sendSystemLine(sender, "<gray>Hide completed on direct open:</gray> <white>%value%</white>", Map.of("value", String.valueOf(plugin.settings().hideCompletedOnDirectOpen())));
             sendSystemLine(sender, "<gray>PlaceholderAPI:</gray> <white>%value%</white>", Map.of("value", placeholderService.hasPlaceholderApi() ? "enabled" : "not detected"));
             sendSystemLine(sender, "<gray>CMI:</gray> <white>%value%</white>", Map.of("value", String.valueOf(plugin.getServer().getPluginManager().isPluginEnabled("CMI"))));
             sendSystemLine(sender, "<gray>LuckPerms:</gray> <white>%value%</white>", Map.of("value", String.valueOf(plugin.getServer().getPluginManager().isPluginEnabled("LuckPerms"))));
             sendSystemLine(sender, "<gray>Vault:</gray> <white>%value%</white>", Map.of("value", String.valueOf(plugin.getServer().getPluginManager().isPluginEnabled("Vault"))));
+            sendSystemLine(sender, "<gray>Economy provider:</gray> <white>%value%</white>", Map.of("value", tradeManager.economyAvailable() ? tradeManager.economyProviderName() : "not available"));
             sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Commands</gradient>");
             sendSystemLine(sender, "<yellow>/_trade</yellow> <gray>- open the trade index for yourself</gray>");
             sendSystemLine(sender, "<yellow>/_trade open [trade] [player]</yellow> <gray>- open the index or one trade</gray>");
+            sendSystemLine(sender, "<yellow>/_trade open category <category> [player]</yellow> <gray>- open a filtered category index</gray>");
             sendSystemLine(sender, "<yellow>/_trade reload</yellow> <gray>- reload config.yml, locale, and trade files</gray>");
             sendSystemLine(sender, "<yellow>/_trade debug [trade]</yellow> <gray>- show environment or trade details</gray>");
+            sendSystemLine(sender, "<yellow>/_trade debug player <player></yellow> <gray>- show stored usage data</gray>");
             sendSystemLine(sender, "<yellow>/_trade debug <trade> reset <player|all></yellow> <gray>- reset tracked player usage data</gray>");
-            sendSystemLine(sender, "<yellow>/_trade create <id></yellow> <gray>- create a new trade file</gray>");
-            sendSystemLine(sender, "<yellow>/_trade capture requirements|icon|reward <trade></yellow> <gray>- capture inventory/main-hand items</gray>");
-            sendSystemLine(sender, "<yellow>/_trade set display|description|permission|completion|max|ctext|sort <trade> <value></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade create <id></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade clone <source> <newId></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade delete <trade></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade capture requirements|icon|reward <trade></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade set display|description|permission|completion|max|ctext|sort|hide|worlds|money|exp|start|end|category <trade> <value></yellow>");
             sendSystemLine(sender, "<yellow>/_trade toggle <trade> <true|false></yellow>");
             sendSystemLine(sender, "<yellow>/_trade command add|clear <trade> <open|info|success|fail> <command></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade test <trade> [player]</yellow>");
             sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Command Prefixes</gradient>");
             sendSystemLine(sender, "<yellow>console:</yellow> <gray>run command as console</gray>");
             sendSystemLine(sender, "<yellow>player:</yellow> <gray>run command as the player</gray>");
             sendSystemLine(sender, "<yellow>message:</yellow> <gray>send a formatted chat message</gray>");
             sendSystemLine(sender, "<yellow>actionbar:</yellow> <gray>send a formatted action bar</gray>");
             sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Placeholders</gradient>");
-            sendSystemLine(sender, "<yellow>%player%</yellow> <gray>%player_name% %player_uuid% %id% %trade_id% %trade_name%</gray>");
-            sendSystemLine(sender, "<yellow>%trade_description%</yellow> <gray>%trade_permission% %ctext_file% %missing_items%</gray>");
-            sendSystemLine(sender, "<yellow>%required_items%</yellow> <gray>%item_cost% %requirements_count% %missing_amount%</gray>");
-            sendSystemLine(sender, "<yellow>%trade_uses%</yellow> <gray>%max_trades% %remaining_trades% %max_uses% %remaining_uses%</gray>");
+            sendSystemLine(sender, "<yellow>%player%</yellow> <gray>%player_name% %player_uuid% %id% %trade_id% %trade_name% %category%</gray>");
+            sendSystemLine(sender, "<yellow>%trade_description%</yellow> <gray>%trade_permission% %ctext_file% %allowed_worlds% %current_world%</gray>");
+            sendSystemLine(sender, "<yellow>%required_items%</yellow> <gray>%item_cost% %requirements_count% %money_cost% %exp_cost%</gray>");
+            sendSystemLine(sender, "<yellow>%trade_uses%</yellow> <gray>%max_trades% %remaining_trades% %player_money% %player_level%</gray>");
+            sendSystemLine(sender, "<yellow>%missing_items%</yellow> <gray>%missing_amount% %missing_money% %missing_exp% %missing_summary%</gray>");
             if (placeholderService.hasPlaceholderApi()) {
                 sendSystemLine(sender, "<gray>Any PlaceholderAPI placeholder is also supported where a player context exists.</gray>");
             }
+            if (!tradeManager.validationWarnings().isEmpty()) {
+                sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Validation Warnings</gradient>");
+                for (String warning : tradeManager.validationWarnings()) {
+                    sendSystemLine(sender, "<dark_gray>-</dark_gray> <yellow>%value%</yellow>", Map.of("value", warning));
+                }
+            }
             return true;
+        }
+
+        if ("player".equalsIgnoreCase(args[0])) {
+            if (args.length < 2) {
+                throw new IllegalArgumentException("Provide a player name or UUID.");
+            }
+            return handleDebugPlayer(sender, args[1]);
         }
 
         TradeDefinition trade = tradeManager.findTrade(args[0]).orElse(null);
@@ -317,11 +390,17 @@ public final class TradeCommand implements TabExecutor, Listener {
         sendSystemLine(sender, "<gray>File:</gray> <white>%value%</white>", Map.of("value", trade.file().toAbsolutePath().toString()));
         sendSystemLine(sender, "<gray>Enabled:</gray> <white>%value%</white>", Map.of("value", String.valueOf(trade.enabled())));
         sendSystemLine(sender, "<gray>Sort order:</gray> <white>%value%</white>", Map.of("value", String.valueOf(trade.sortOrder())));
+        sendSystemLine(sender, "<gray>Category:</gray> <white>%value%</white>", Map.of("value", trade.category()));
         sendSystemLine(sender, "<gray>Display:</gray> %value%", Map.of("value", trade.displayName()));
         sendSystemLine(sender, "<gray>Permission:</gray> <white>%value%</white>", Map.of("value", tradeManager.effectivePermission(trade)));
         sendSystemLine(sender, "<gray>Completion permission:</gray> <white>%value%</white>", Map.of("value", tradeManager.effectiveCompletionPermission(trade)));
         sendSystemLine(sender, "<gray>Max trades:</gray> <white>%value%</white>", Map.of("value", tradeManager.formattedMaxTrades(trade)));
         sendSystemLine(sender, "<gray>Hide when completed:</gray> <white>%value%</white>", Map.of("value", String.valueOf(trade.hideWhenCompleted())));
+        sendSystemLine(sender, "<gray>Allowed worlds:</gray> <white>%value%</white>", Map.of("value", tradeManager.allowedWorldsDescription(trade)));
+        sendSystemLine(sender, "<gray>Money cost:</gray> <white>%value%</white>", Map.of("value", tradeManager.formatMoney(trade.moneyCost())));
+        sendSystemLine(sender, "<gray>Exp cost:</gray> <white>%value%</white>", Map.of("value", String.valueOf(trade.expCost())));
+        sendSystemLine(sender, "<gray>Start date:</gray> <white>%value%</white>", Map.of("value", tradeManager.formattedDate(trade.startDate())));
+        sendSystemLine(sender, "<gray>End date:</gray> <white>%value%</white>", Map.of("value", tradeManager.formattedDate(trade.endDate())));
         sendSystemLine(sender, "<gray>ctext file:</gray> <white>%value%</white>", Map.of("value", tradeManager.effectiveCtextFile(trade)));
         sendSystemLine(sender, "<gray>Requirements:</gray> <white>%value%</white>", Map.of("value", String.valueOf(trade.requirements().size())));
         if (context != null) {
@@ -351,6 +430,29 @@ public final class TradeCommand implements TabExecutor, Listener {
         return true;
     }
 
+    private boolean handleDebugPlayer(CommandSender sender, String input) {
+        ResetTarget target = resolveResetTarget(input);
+        if (target == null) {
+            throw new IllegalArgumentException("Player not found for debug: " + input);
+        }
+
+        sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Player Debug</gradient><gray>:</gray> <white>%name%</white>", Map.of("name", target.name()));
+        sendSystemLine(sender, "<gray>UUID:</gray> <white>%value%</white>", Map.of("value", target.uuid().toString()));
+        Map<String, Integer> usages = new LinkedHashMap<>(tradeManager.usageCounts(target.uuid()));
+        if (usages.isEmpty()) {
+            sendSystemLine(sender, "<gray>No tracked trade usage found.</gray>");
+            return true;
+        }
+
+        usages.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
+            .forEach(entry -> sendSystemLine(sender, "<dark_gray>-</dark_gray> <yellow>%trade%</yellow> <gray>uses:</gray> <white>%uses%</white>", Map.of(
+                "trade", entry.getKey(),
+                "uses", String.valueOf(entry.getValue())
+            )));
+        return true;
+    }
+
     private boolean handleCreate(CommandSender sender, String[] args) throws IOException {
         if (!requireAdmin(sender)) {
             return true;
@@ -361,7 +463,49 @@ public final class TradeCommand implements TabExecutor, Listener {
         }
 
         tradeManager.createTrade(args[0]);
+        auditLogService.logAdminAction(sender, "create_trade", Map.of("trade_id", args[0]));
         placeholderService.sendMessage(sender, sender instanceof Player player ? player : null, plugin.settings().tradeCreatedMessage(), Map.of("trade_id", args[0]));
+        return true;
+    }
+
+    private boolean handleClone(CommandSender sender, String[] args) throws IOException {
+        if (!requireAdmin(sender)) {
+            return true;
+        }
+        if (args.length < 2) {
+            throw new IllegalArgumentException("Usage: /_trade clone <source> <newId>");
+        }
+
+        tradeManager.cloneTrade(args[0], args[1]);
+        auditLogService.logAdminAction(sender, "clone_trade", Map.of("source_trade", args[0], "trade_id", args[1]));
+        placeholderService.sendMessage(
+            sender,
+            sender instanceof Player player ? player : null,
+            plugin.settings().tradeClonedMessage(),
+            Map.of("source_trade", args[0], "trade_id", args[1])
+        );
+        return true;
+    }
+
+    private boolean handleDelete(CommandSender sender, String[] args) throws IOException {
+        if (!requireAdmin(sender)) {
+            return true;
+        }
+        if (args.length < 1) {
+            throw new IllegalArgumentException("Usage: /_trade delete <trade> [confirm]");
+        }
+
+        if ("confirm".equalsIgnoreCase(args[0])) {
+            if (args.length < 2) {
+                throw new IllegalArgumentException("Usage: /_trade delete confirm <trade>");
+            }
+            tradeManager.deleteTrade(args[1]);
+            auditLogService.logAdminAction(sender, "delete_trade", Map.of("trade_id", args[1]));
+            placeholderService.sendMessage(sender, sender instanceof Player player ? player : null, plugin.settings().tradeDeletedMessage(), Map.of("trade_id", args[1]));
+            return true;
+        }
+
+        placeholderService.sendMessage(sender, sender instanceof Player player ? player : null, plugin.settings().tradeDeleteConfirmMessage(), Map.of("trade_id", args[0]));
         return true;
     }
 
@@ -383,6 +527,7 @@ public final class TradeCommand implements TabExecutor, Listener {
         switch (mode) {
             case "requirements" -> {
                 tradeManager.captureRequirements(tradeId, player);
+                auditLogService.logAdminAction(sender, "capture_requirements", Map.of("trade_id", tradeId));
                 placeholderService.sendMessage(sender, player, plugin.settings().requirementsCapturedMessage(), Map.of("trade_id", tradeId));
             }
             case "icon" -> {
@@ -391,6 +536,7 @@ public final class TradeCommand implements TabExecutor, Listener {
                     throw new IllegalArgumentException("Hold the icon item in your main hand first.");
                 }
                 tradeManager.captureIcon(tradeId, hand);
+                auditLogService.logAdminAction(sender, "capture_icon", Map.of("trade_id", tradeId, "item", placeholderService.plainItemName(hand)));
                 placeholderService.sendMessage(sender, player, plugin.settings().iconCapturedMessage(), Map.of("trade_id", tradeId));
             }
             case "reward" -> {
@@ -399,6 +545,7 @@ public final class TradeCommand implements TabExecutor, Listener {
                     throw new IllegalArgumentException("Hold the reward preview item in your main hand first.");
                 }
                 tradeManager.captureReward(tradeId, hand);
+                auditLogService.logAdminAction(sender, "capture_reward", Map.of("trade_id", tradeId, "item", placeholderService.plainItemName(hand)));
                 placeholderService.sendMessage(sender, player, plugin.settings().rewardCapturedMessage(), Map.of("trade_id", tradeId));
             }
             default -> sendHelp(sender);
@@ -428,12 +575,20 @@ public final class TradeCommand implements TabExecutor, Listener {
             case "max" -> tradeManager.setMaxTrades(tradeId, parseMaxTrades(value));
             case "ctext" -> tradeManager.setCtextFile(tradeId, normalizedValue);
             case "sort" -> tradeManager.setSortOrder(tradeId, Integer.parseInt(value));
+            case "hide" -> tradeManager.setHideWhenCompleted(tradeId, parseBooleanStrict(value));
+            case "worlds" -> tradeManager.setAllowedWorlds(tradeId, normalizedValue);
+            case "money" -> tradeManager.setMoneyCost(tradeId, Double.parseDouble(value));
+            case "exp" -> tradeManager.setExpCost(tradeId, Integer.parseInt(value));
+            case "start" -> tradeManager.setStartDate(tradeId, normalizedValue);
+            case "end" -> tradeManager.setEndDate(tradeId, normalizedValue);
+            case "category" -> tradeManager.setCategory(tradeId, normalizedValue);
             default -> {
                 sendHelp(sender);
                 return true;
             }
         }
 
+        auditLogService.logAdminAction(sender, "set_trade_property", Map.of("trade_id", tradeId, "property", property, "value", value));
         placeholderService.sendMessage(
             sender,
             sender instanceof Player player ? player : null,
@@ -452,8 +607,9 @@ public final class TradeCommand implements TabExecutor, Listener {
             return true;
         }
 
-        boolean enabled = Boolean.parseBoolean(args[1]);
+        boolean enabled = parseBooleanStrict(args[1]);
         tradeManager.setEnabled(args[0], enabled);
+        auditLogService.logAdminAction(sender, "toggle_trade", Map.of("trade_id", args[0], "enabled", String.valueOf(enabled)));
         placeholderService.sendMessage(
             sender,
             sender instanceof Player player ? player : null,
@@ -485,6 +641,7 @@ public final class TradeCommand implements TabExecutor, Listener {
             }
             String commandLine = joinFrom(args, 3);
             tradeManager.addCommand(tradeId, trigger, commandLine);
+            auditLogService.logAdminAction(sender, "add_trade_command", Map.of("trade_id", tradeId, "group", trigger.tradeConfigKey(), "command", commandLine));
             placeholderService.sendMessage(
                 sender,
                 sender instanceof Player player ? player : null,
@@ -495,6 +652,7 @@ public final class TradeCommand implements TabExecutor, Listener {
         }
         if ("clear".equals(action)) {
             tradeManager.clearCommands(tradeId, trigger);
+            auditLogService.logAdminAction(sender, "clear_trade_commands", Map.of("trade_id", tradeId, "group", trigger.tradeConfigKey()));
             placeholderService.sendMessage(
                 sender,
                 sender instanceof Player player ? player : null,
@@ -508,9 +666,66 @@ public final class TradeCommand implements TabExecutor, Listener {
         return true;
     }
 
+    private boolean handleTest(CommandSender sender, String[] args) {
+        if (!requireAdmin(sender)) {
+            return true;
+        }
+        if (args.length < 1) {
+            throw new IllegalArgumentException("Usage: /_trade test <trade> [player]");
+        }
+
+        TradeDefinition trade = tradeManager.findTrade(args[0]).orElseThrow(() -> new IllegalArgumentException("Trade not found: " + args[0]));
+        Player target;
+        if (args.length >= 2) {
+            target = Bukkit.getPlayerExact(args[1]);
+            if (target == null) {
+                throw new IllegalArgumentException("Player not found: " + args[1]);
+            }
+        } else if (sender instanceof Player player) {
+            target = player;
+        } else {
+            throw new IllegalArgumentException("Console must specify a player.");
+        }
+
+        TradeCheckResult result = tradeManager.evaluateTrade(target, trade);
+        Map<String, String> replacements = new LinkedHashMap<>();
+        replacements.put("trade_id", trade.id());
+        replacements.put("trade_name", trade.displayName());
+        replacements.put("target", target.getName());
+        replacements.put("status", result.status().name());
+        replacements.put("world", target.getWorld().getName());
+        replacements.put("allowed_worlds", tradeManager.allowedWorldsDescription(trade));
+        replacements.put("missing_summary", tradeManager.summarizeMissingRequirements(result));
+        replacements.put("money_cost", tradeManager.formatMoney(trade.moneyCost()));
+        replacements.put("exp_cost", String.valueOf(trade.expCost()));
+        replacements.put("player_money", tradeManager.formatMoney(tradeManager.playerBalance(target)));
+        replacements.put("player_level", String.valueOf(target.getLevel()));
+
+        sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Dry Run</gradient><gray>:</gray> <white>%trade_id%</white> <gray>for</gray> <white>%target%</white>", replacements);
+        sendSystemLine(sender, "<gray>Status:</gray> <white>%status%</white>", replacements);
+        sendSystemLine(sender, "<gray>World:</gray> <white>%world%</white> <gray>(allowed: %allowed_worlds%)</gray>", replacements);
+        sendSystemLine(sender, "<gray>Money:</gray> <white>%player_money%</white>/<white>%money_cost%</white>", replacements);
+        sendSystemLine(sender, "<gray>Levels:</gray> <white>%player_level%</white>/<white>%exp_cost%</white>", replacements);
+        sendSystemLine(sender, "<gray>Missing:</gray> <white>%missing_summary%</white>", replacements);
+
+        TradeTrigger commandGroup = result.success() ? TradeTrigger.SUCCESS : TradeTrigger.FAIL;
+        List<String> commands = trade.commands(commandGroup);
+        sendSystemLine(sender, "<gray>%group% commands:</gray> <white>%count%</white>", Map.of(
+            "group", commandGroup.tradeConfigKey(),
+            "count", String.valueOf(commands.size())
+        ));
+        for (String commandLine : commands) {
+            sendSystemLine(sender, "<dark_gray>-</dark_gray> <white>%command%</white>", Map.of("command", commandLine));
+        }
+
+        auditLogService.logAdminAction(sender, "test_trade", Map.of("trade_id", trade.id(), "target", target.getName(), "status", result.status().name()));
+        return true;
+    }
+
     private boolean handleDebugReset(CommandSender sender, Player context, TradeDefinition trade, String targetInput) {
         if ("all".equalsIgnoreCase(targetInput)) {
             int affectedPlayers = tradeManager.resetTradeUsageForAll(trade.id());
+            auditLogService.logAdminAction(sender, "reset_trade_usage_all", Map.of("trade_id", trade.id(), "affected_players", String.valueOf(affectedPlayers)));
             placeholderService.sendMessage(
                 sender,
                 context,
@@ -526,6 +741,7 @@ public final class TradeCommand implements TabExecutor, Listener {
         }
 
         int previousUses = tradeManager.resetTradeUsage(trade.id(), target.uuid(), target.name());
+        auditLogService.logAdminAction(sender, "reset_trade_usage_player", Map.of("trade_id", trade.id(), "target", target.name(), "previous_uses", String.valueOf(previousUses)));
         placeholderService.sendMessage(
             sender,
             context,
@@ -537,6 +753,47 @@ public final class TradeCommand implements TabExecutor, Listener {
             )
         );
         return true;
+    }
+
+    private boolean openTradeDirect(CommandSender sender, Player target, TradeDefinition trade, String category) {
+        if (target == null) {
+            placeholderService.sendMessage(sender, null, plugin.settings().consoleNeedsPlayerMessage(), Map.of());
+            return true;
+        }
+        if (sender instanceof Player player && !player.getUniqueId().equals(target.getUniqueId()) && !hasAdmin(sender)) {
+            placeholderService.sendMessage(sender, player, plugin.settings().noPermissionMessage(), Map.of());
+            return true;
+        }
+        if (!target.hasPermission(plugin.settings().adminPermission())
+            && plugin.settings().hideCompletedOnDirectOpen()
+            && trade.hideWhenCompleted()
+            && tradeManager.isCompleted(target, trade)) {
+            placeholderService.sendMessage(target, target, trade.maxTrades() == 1 ? plugin.settings().tradeCompletedMessage() : plugin.settings().tradeLimitReachedMessage(), Map.of());
+            return true;
+        }
+        tradeGuiService.openTrade(target, trade, 0, category);
+        return true;
+    }
+
+    private Player resolveOpenTarget(CommandSender sender, Player senderPlayer, String targetName) {
+        if (targetName == null || targetName.isBlank()) {
+            if (senderPlayer == null) {
+                placeholderService.sendMessage(sender, null, plugin.settings().consoleNeedsPlayerMessage(), Map.of());
+                return null;
+            }
+            return senderPlayer;
+        }
+
+        Player target = Bukkit.getPlayerExact(targetName);
+        if (target == null) {
+            placeholderService.sendMessage(sender, senderPlayer, plugin.settings().playerNotFoundMessage(), Map.of("target", targetName));
+            return null;
+        }
+        if (senderPlayer != null && !senderPlayer.getUniqueId().equals(target.getUniqueId()) && !hasAdmin(sender)) {
+            placeholderService.sendMessage(sender, senderPlayer, plugin.settings().noPermissionMessage(), Map.of());
+            return null;
+        }
+        return target;
     }
 
     private boolean requireAdmin(CommandSender sender) {
@@ -555,15 +812,20 @@ public final class TradeCommand implements TabExecutor, Listener {
         sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Usage</gradient>");
         sendSystemLine(sender, "<yellow>/_trade</yellow> <gray>- open the main trade index</gray>");
         sendSystemLine(sender, "<yellow>/_trade open [trade] [player]</yellow> <gray>- open a trade or the index</gray>");
+        sendSystemLine(sender, "<yellow>/_trade open category <category> [player]</yellow> <gray>- open a filtered category index</gray>");
         if (hasAdmin(sender)) {
             sendSystemLine(sender, "<yellow>/_trade reload</yellow>");
             sendSystemLine(sender, "<yellow>/_trade debug [trade]</yellow>");
+            sendSystemLine(sender, "<yellow>/_trade debug player <player></yellow>");
             sendSystemLine(sender, "<yellow>/_trade debug <trade> reset <player|all></yellow>");
             sendSystemLine(sender, "<yellow>/_trade create <id></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade clone <source> <newId></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade delete <trade></yellow>");
             sendSystemLine(sender, "<yellow>/_trade capture requirements|icon|reward <trade></yellow>");
-            sendSystemLine(sender, "<yellow>/_trade set display|description|permission|completion|max|ctext|sort <trade> <value></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade set display|description|permission|completion|max|ctext|sort|hide|worlds|money|exp|start|end|category <trade> <value></yellow>");
             sendSystemLine(sender, "<yellow>/_trade toggle <trade> <true|false></yellow>");
             sendSystemLine(sender, "<yellow>/_trade command add|clear <trade> <open|info|success|fail> <command></yellow>");
+            sendSystemLine(sender, "<yellow>/_trade test <trade> [player]</yellow>");
         }
     }
 
@@ -590,6 +852,17 @@ public final class TradeCommand implements TabExecutor, Listener {
             throw new IllegalArgumentException("max must be 1 or greater, or -1 for unlimited.");
         }
         return parsed;
+    }
+
+    private boolean parseBooleanStrict(String input) {
+        String normalized = input == null ? "" : input.trim().toLowerCase(Locale.ROOT);
+        if ("true".equals(normalized)) {
+            return true;
+        }
+        if ("false".equals(normalized)) {
+            return false;
+        }
+        throw new IllegalArgumentException("Use true or false.");
     }
 
     private List<String> debugResetTargets() {
@@ -622,7 +895,7 @@ public final class TradeCommand implements TabExecutor, Listener {
         }
 
         try {
-            java.util.UUID uuid = java.util.UUID.fromString(input);
+            UUID uuid = UUID.fromString(input);
             return new ResetTarget(uuid, input);
         } catch (IllegalArgumentException ignored) {
             return null;
@@ -640,6 +913,6 @@ public final class TradeCommand implements TabExecutor, Listener {
         return matches;
     }
 
-    private record ResetTarget(java.util.UUID uuid, String name) {
+    private record ResetTarget(UUID uuid, String name) {
     }
 }

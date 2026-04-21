@@ -12,9 +12,8 @@ softdepend:
 commands:
   _trade:
     description: Open or manage 1MB trades
-    usage: /_trade [open|reload|debug|create|capture|set|toggle|command]
+    usage: /_trade [open|reload|debug|create|clone|delete|capture|set|toggle|command|test]
 permissions:
   onembtrade.admin:
     description: Allows use of all 1MB trade admin commands
     default: op
-

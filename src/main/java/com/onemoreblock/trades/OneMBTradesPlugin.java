@@ -6,19 +6,25 @@ import com.onemoreblock.trades.gui.TradeGuiService;
 import com.onemoreblock.trades.gui.TradeMenuListener;
 import com.onemoreblock.trades.placeholder.PlaceholderRegistration;
 import com.onemoreblock.trades.placeholder.OneMBTradesPlaceholderExpansion;
+import com.onemoreblock.trades.service.AuditLogService;
 import com.onemoreblock.trades.service.CommandActionService;
+import com.onemoreblock.trades.service.EconomyService;
 import com.onemoreblock.trades.service.PlayerTradeDataStore;
 import com.onemoreblock.trades.service.PlaceholderService;
 import com.onemoreblock.trades.service.TradeManager;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.bukkit.command.Command;
@@ -36,6 +42,8 @@ public final class OneMBTradesPlugin extends JavaPlugin {
     private PluginSettings settings;
     private PlaceholderService placeholderService;
     private PlayerTradeDataStore playerTradeDataStore;
+    private EconomyService economyService;
+    private AuditLogService auditLogService;
     private TradeManager tradeManager;
     private CommandActionService commandActionService;
     private TradeGuiService tradeGuiService;
@@ -45,19 +53,22 @@ public final class OneMBTradesPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        mergeMissingConfigDefaults();
         migrateConfigDefaults();
         ensurePluginDataLayout();
 
         placeholderService = new PlaceholderService(this);
         playerTradeDataStore = new PlayerTradeDataStore(this);
+        economyService = new EconomyService(this);
+        auditLogService = new AuditLogService(this);
         settings = PluginSettings.load(getConfig(), loadLocaleConfig());
-        tradeManager = new TradeManager(this, settings, placeholderService, playerTradeDataStore);
+        tradeManager = new TradeManager(this, settings, placeholderService, playerTradeDataStore, economyService);
         commandActionService = new CommandActionService(this, tradeManager, placeholderService, settings);
-        tradeGuiService = new TradeGuiService(this, tradeManager, commandActionService, placeholderService, settings);
+        tradeGuiService = new TradeGuiService(this, tradeManager, commandActionService, placeholderService, auditLogService, settings);
         tradeManager.reloadAll();
         registerPlaceholderExpansion();
 
-        TradeCommand tradeCommand = new TradeCommand(this, tradeManager, tradeGuiService, commandActionService, placeholderService);
+        TradeCommand tradeCommand = new TradeCommand(this, tradeManager, tradeGuiService, commandActionService, placeholderService, auditLogService);
         PluginCommand pluginCommand = getCommand("_trade");
         if (pluginCommand == null) {
             throw new IllegalStateException("Command '_trade' is missing from plugin.yml");
@@ -82,6 +93,8 @@ public final class OneMBTradesPlugin extends JavaPlugin {
 
     public void reloadPluginState() {
         reloadConfig();
+        mergeMissingConfigDefaults();
+        reloadConfig();
         settings = PluginSettings.load(getConfig(), loadLocaleConfig());
         tradeManager.setSettings(settings);
         tradeManager.reloadAll();
@@ -92,6 +105,10 @@ public final class OneMBTradesPlugin extends JavaPlugin {
 
     public PluginSettings settings() {
         return settings;
+    }
+
+    public AuditLogService auditLogService() {
+        return auditLogService;
     }
 
     public boolean executeGlobalAlias(CommandSender sender, String[] args) {
@@ -146,6 +163,7 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         ensureFolder("Translations");
         ensureFolder("Trades");
         ensureFolder("playerData");
+        ensureFolder("logs");
         saveBundledFile("Translations/Locale_EN.yml", "Translations/Locale_EN.yml");
         saveBundledFile("Trades/Example-Vote-Tokens.yml", "Trades/Example-Vote-Tokens.yml", "trades/Example-Vote-Tokens.yml");
         saveBundledFile("Trades/Summer-Event.yml", "Trades/Summer-Event.yml", "trades/Summer-Event.yml");
@@ -178,6 +196,7 @@ public final class OneMBTradesPlugin extends JavaPlugin {
                 saveBundledFile("Translations/Locale_EN.yml", "Translations/Locale_EN.yml");
             }
         }
+        mergeMissingYamlDefaults(configuredFile, "Translations/" + configuredFile.getName());
         FileConfiguration localeConfig = YamlConfiguration.loadConfiguration(configuredFile);
         if (migrateLocaleDefaults(configuredFile, localeConfig)) {
             localeConfig = YamlConfiguration.loadConfiguration(configuredFile);
@@ -221,7 +240,10 @@ public final class OneMBTradesPlugin extends JavaPlugin {
 
         CommandMap commandMap = getServer().getCommandMap();
         globalAliasCommand.unregister(commandMap);
-        commandMap.getKnownCommands().entrySet().removeIf(entry -> entry.getValue() == globalAliasCommand);
+        Map<String, Command> knownCommands = extractKnownCommands(commandMap);
+        if (knownCommands != null) {
+            knownCommands.entrySet().removeIf(entry -> entry.getValue() == globalAliasCommand);
+        }
         globalAliasCommand = null;
         syncCommands();
     }
@@ -232,6 +254,18 @@ public final class OneMBTradesPlugin extends JavaPlugin {
             syncCommandsMethod.invoke(getServer());
         } catch (ReflectiveOperationException ignored) {
             // Older or different server implementations may not expose syncCommands publicly.
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Command> extractKnownCommands(CommandMap commandMap) {
+        try {
+            Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
+            knownCommandsField.setAccessible(true);
+            Object value = knownCommandsField.get(commandMap);
+            return value instanceof Map<?, ?> map ? (Map<String, Command>) map : null;
+        } catch (ReflectiveOperationException ignored) {
+            return null;
         }
     }
 
@@ -272,6 +306,40 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         }
         localeConfig.set(path, replacementValue);
         return true;
+    }
+
+    private void mergeMissingConfigDefaults() {
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (mergeMissingYamlDefaults(configFile, "config.yml")) {
+            reloadConfig();
+        }
+    }
+
+    private boolean mergeMissingYamlDefaults(File targetFile, String resourcePath) {
+        try (InputStream input = getResource(resourcePath)) {
+            if (input == null || !targetFile.exists()) {
+                return false;
+            }
+
+            YamlConfiguration existing = YamlConfiguration.loadConfiguration(targetFile);
+            YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(input, StandardCharsets.UTF_8));
+            boolean changed = false;
+            for (String path : defaults.getKeys(true)) {
+                if (existing.contains(path)) {
+                    continue;
+                }
+                existing.set(path, defaults.get(path));
+                changed = true;
+            }
+
+            if (changed) {
+                existing.save(targetFile);
+            }
+            return changed;
+        } catch (IOException exception) {
+            getLogger().warning("Could not merge defaults for " + targetFile.getName() + ": " + exception.getMessage());
+            return false;
+        }
     }
 
     private final class DynamicAliasCommand extends BukkitCommand {

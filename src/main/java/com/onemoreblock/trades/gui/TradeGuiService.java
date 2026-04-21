@@ -5,6 +5,7 @@ import com.onemoreblock.trades.config.PluginSettings;
 import com.onemoreblock.trades.model.TradeCheckResult;
 import com.onemoreblock.trades.model.TradeDefinition;
 import com.onemoreblock.trades.model.TradeTrigger;
+import com.onemoreblock.trades.service.AuditLogService;
 import com.onemoreblock.trades.service.CommandActionService;
 import com.onemoreblock.trades.service.PlaceholderService;
 import com.onemoreblock.trades.service.TradeManager;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -44,6 +46,8 @@ public final class TradeGuiService {
     private final TradeManager tradeManager;
     private final CommandActionService commandActionService;
     private final PlaceholderService placeholderService;
+    private final AuditLogService auditLogService;
+    private final Map<UUID, Long> lastTradeClickTimes;
     private PluginSettings settings;
 
     public TradeGuiService(
@@ -51,13 +55,16 @@ public final class TradeGuiService {
         TradeManager tradeManager,
         CommandActionService commandActionService,
         PlaceholderService placeholderService,
+        AuditLogService auditLogService,
         PluginSettings settings
     ) {
         this.plugin = plugin;
         this.tradeManager = tradeManager;
         this.commandActionService = commandActionService;
         this.placeholderService = placeholderService;
+        this.auditLogService = auditLogService;
         this.settings = settings;
+        this.lastTradeClickTimes = new HashMap<>();
     }
 
     public void setSettings(PluginSettings settings) {
@@ -65,31 +72,42 @@ public final class TradeGuiService {
     }
 
     public void openIndex(Player player) {
-        openIndex(player, 0);
+        openIndex(player, 0, null);
     }
 
     public void openIndex(Player player, int page) {
+        openIndex(player, page, null);
+    }
+
+    public void openIndex(Player player, int page, String category) {
         boolean adminView = player.hasPermission(settings.adminPermission());
-        List<TradeDefinition> visibleTrades = tradeManager.visibleTrades(player, adminView);
+        List<TradeDefinition> visibleTrades = tradeManager.visibleTrades(player, adminView, category);
         int maxPage = Math.max(1, (int) Math.ceil(visibleTrades.size() / (double) INDEX_PAGE_SIZE));
         int currentPage = Math.max(0, Math.min(page, maxPage - 1));
 
-        TradeMenuHolder holder = new TradeMenuHolder(MenuType.INDEX, null, currentPage);
+        String categoryFilter = normalizeCategory(category);
+        TradeMenuHolder holder = new TradeMenuHolder(MenuType.INDEX, null, currentPage, categoryFilter);
+        Map<String, String> titleReplacements = Map.of(
+            "category", categoryFilter.isBlank() ? "all" : categoryFilter,
+            "category_name", categoryFilter.isBlank() ? "All Trades" : tradeManager.categoryDisplayName(categoryFilter)
+        );
         Inventory inventory = Bukkit.createInventory(
             holder,
             MENU_SIZE,
-            placeholderService.component(player, settings.indexTitle(), Map.of())
+            placeholderService.component(player, settings.indexTitle(), titleReplacements)
         );
         holder.setInventory(inventory);
 
         fillInventory(inventory);
         inventory.setItem(SLOT_PLAYER_HEAD, createPlayerHead(player));
-        inventory.setItem(SLOT_CLOSE, createConfiguredItem(settings.closeButtonItem(), player, Map.of()));
-        inventory.setItem(SLOT_PREVIOUS, createConfiguredItem(settings.previousPageItem(), player, Map.of()));
-        inventory.setItem(SLOT_NEXT, createConfiguredItem(settings.nextPageItem(), player, Map.of()));
+        inventory.setItem(SLOT_CLOSE, createConfiguredItem(settings.closeButtonItem(), player, titleReplacements));
+        inventory.setItem(SLOT_PREVIOUS, createConfiguredItem(settings.previousPageItem(), player, titleReplacements));
+        inventory.setItem(SLOT_NEXT, createConfiguredItem(settings.nextPageItem(), player, titleReplacements));
         inventory.setItem(SLOT_PAGE, createConfiguredItem(settings.pageIndicatorItem(), player, Map.of(
             "page", String.valueOf(currentPage + 1),
-            "max_page", String.valueOf(maxPage)
+            "max_page", String.valueOf(maxPage),
+            "category", titleReplacements.get("category"),
+            "category_name", titleReplacements.get("category_name")
         )));
 
         int startIndex = currentPage * INDEX_PAGE_SIZE;
@@ -104,6 +122,10 @@ public final class TradeGuiService {
     }
 
     public boolean openTrade(Player player, TradeDefinition trade, int returnPage) {
+        return openTrade(player, trade, returnPage, null);
+    }
+
+    public boolean openTrade(Player player, TradeDefinition trade, int returnPage, String returnCategory) {
         boolean adminView = player.hasPermission(settings.adminPermission());
         if (!adminView) {
             if (!trade.enabled()) {
@@ -117,7 +139,7 @@ public final class TradeGuiService {
         }
 
         Map<String, String> replacements = tradePlaceholders(player, trade);
-        TradeMenuHolder holder = new TradeMenuHolder(MenuType.DETAIL, trade.id(), returnPage);
+        TradeMenuHolder holder = new TradeMenuHolder(MenuType.DETAIL, trade.id(), returnPage, normalizeCategory(returnCategory));
         Inventory inventory = Bukkit.createInventory(
             holder,
             MENU_SIZE,
@@ -140,7 +162,7 @@ public final class TradeGuiService {
             if (requirement == null || requirement.getType().isAir()) {
                 continue;
             }
-            inventory.setItem(REQUIREMENT_SLOTS.get(index), requirement.clone());
+            inventory.setItem(REQUIREMENT_SLOTS.get(index), createRequirementPreview(player, trade, requirement));
         }
 
         player.openInventory(inventory);
@@ -164,8 +186,8 @@ public final class TradeGuiService {
 
         int slot = event.getRawSlot();
         switch (holder.type()) {
-            case INDEX -> handleIndexClick(player, holder.page(), slot);
-            case DETAIL -> handleDetailClick(player, holder.tradeId(), holder.page(), slot);
+            case INDEX -> handleIndexClick(player, holder.page(), holder.category(), slot);
+            case DETAIL -> handleDetailClick(player, holder.tradeId(), holder.page(), holder.category(), slot);
         }
     }
 
@@ -175,26 +197,26 @@ public final class TradeGuiService {
         }
     }
 
-    private void handleIndexClick(Player player, int page, int slot) {
+    private void handleIndexClick(Player player, int page, String category, int slot) {
         boolean adminView = player.hasPermission(settings.adminPermission());
-        List<TradeDefinition> visibleTrades = tradeManager.visibleTrades(player, adminView);
+        List<TradeDefinition> visibleTrades = tradeManager.visibleTrades(player, adminView, category);
         int maxPage = Math.max(1, (int) Math.ceil(visibleTrades.size() / (double) INDEX_PAGE_SIZE));
 
         if (slot >= 0 && slot < INDEX_PAGE_SIZE) {
             int index = page * INDEX_PAGE_SIZE + slot;
             if (index >= 0 && index < visibleTrades.size()) {
                 TradeDefinition trade = visibleTrades.get(index);
-                schedule(() -> openTrade(player, trade, page));
+                schedule(() -> openTrade(player, trade, page, category));
             }
             return;
         }
 
         if (slot == SLOT_PREVIOUS && page > 0) {
-            schedule(() -> openIndex(player, page - 1));
+            schedule(() -> openIndex(player, page - 1, category));
             return;
         }
         if (slot == SLOT_NEXT && page + 1 < maxPage) {
-            schedule(() -> openIndex(player, page + 1));
+            schedule(() -> openIndex(player, page + 1, category));
             return;
         }
         if (slot == SLOT_CLOSE) {
@@ -202,7 +224,7 @@ public final class TradeGuiService {
         }
     }
 
-    private void handleDetailClick(Player player, String tradeId, int page, int slot) {
+    private void handleDetailClick(Player player, String tradeId, int page, String category, int slot) {
         TradeDefinition trade = tradeManager.findTrade(tradeId).orElse(null);
         if (trade == null) {
             placeholderService.sendMessage(player, player, settings.tradeNotFoundMessage(), Map.of("trade_id", tradeId));
@@ -217,24 +239,36 @@ public final class TradeGuiService {
             return;
         }
         if (slot == SLOT_TRADE) {
+            if (tradeAttemptStillCoolingDown(player)) {
+                placeholderService.sendMessage(player, player, settings.tradeBusyMessage(), Map.of());
+                return;
+            }
+
             TradeCheckResult result = tradeManager.consumeTrade(player, trade);
             Map<String, String> replacements = detailPlaceholders(player, trade, result);
             sendResultMessage(player, trade, result);
+            auditLogService.logTradeAttempt(player, trade, result, Map.of(
+                "uses", String.valueOf(tradeManager.tradeUses(player, trade)),
+                "remaining_uses", tradeManager.formattedRemainingTrades(player, trade),
+                "money_cost", tradeManager.formatMoney(trade.moneyCost()),
+                "exp_cost", String.valueOf(trade.expCost()),
+                "missing_summary", tradeManager.summarizeMissingRequirements(result)
+            ));
             if (result.success()) {
                 commandActionService.runTradeTrigger(player, trade, TradeTrigger.SUCCESS, replacements);
                 if (settings.closeOnSuccess()) {
                     schedule(player::closeInventory);
                 } else {
-                    schedule(() -> openTrade(player, trade, page));
+                    schedule(() -> openTrade(player, trade, page, category));
                 }
             } else {
                 commandActionService.runTradeTrigger(player, trade, TradeTrigger.FAIL, replacements);
-                schedule(() -> openTrade(player, trade, page));
+                schedule(() -> openTrade(player, trade, page, category));
             }
             return;
         }
         if (slot == SLOT_BACK) {
-            schedule(() -> openIndex(player, page));
+            schedule(() -> openIndex(player, page, category));
             return;
         }
         if (slot == SLOT_CLOSE) {
@@ -271,7 +305,9 @@ public final class TradeGuiService {
             loreLines.add(settings.tradeIndexAdminFileLine());
         }
         loreLines.add(settings.tradeIndexInspectLine());
-        replacements.put("reward_name", trade.rewardItem() == null ? "" : placeholderService.plainItemName(trade.rewardItem()));
+        replacements.put("reward_name", trade.rewardItem() == null
+            ? ""
+            : placeholderService.escapeMiniMessageTokens(placeholderService.plainItemName(trade.rewardItem())));
         replacements.put("requirements_count", String.valueOf(trade.requirements().size()));
         replacements.put("requirements_suffix", trade.requirements().size() == 1 ? "y" : "ies");
         replacements.put("trade_status", indexStatusText(player, trade, adminView));
@@ -302,21 +338,58 @@ public final class TradeGuiService {
         return item;
     }
 
+    private ItemStack createRequirementPreview(Player player, TradeDefinition trade, ItemStack requiredItem) {
+        ItemStack item = requiredItem.clone();
+        ItemMeta meta = item.getItemMeta();
+        List<Component> lore = meta.lore() == null ? new ArrayList<>() : new ArrayList<>(meta.lore());
+        if (!lore.isEmpty()) {
+            lore.add(Component.empty());
+        }
+
+        int ownedAmount = tradeManager.countMatchingItems(player.getInventory(), requiredItem);
+        int requiredAmount = requiredItem.getAmount();
+        int missingAmount = Math.max(0, requiredAmount - ownedAmount);
+        Map<String, String> replacements = Map.of(
+            "owned_amount", String.valueOf(ownedAmount),
+            "required_amount", String.valueOf(requiredAmount),
+            "item_missing_amount", String.valueOf(missingAmount),
+            "trade_id", trade.id()
+        );
+        lore.add(placeholderService.component(player, settings.requirementProgressLine(), replacements));
+        if (missingAmount > 0) {
+            lore.add(placeholderService.component(player, settings.requirementMissingLine(), replacements));
+        }
+        meta.lore(lore);
+        item.setItemMeta(meta);
+        return item;
+    }
+
     private ItemStack createStatusItem(Player player, TradeDefinition trade) {
         TradeCheckResult result = tradeManager.evaluateTrade(player, trade);
         Map<String, String> replacements = detailPlaceholders(player, trade, result);
         ConfiguredItemSpec spec = switch (result.status()) {
             case SUCCESS -> settings.readyStatusItem();
-            case MISSING_ITEMS -> settings.missingStatusItem();
-            case DISABLED, NO_PERMISSION, ALREADY_COMPLETED -> settings.lockedStatusItem();
+            case MISSING_REQUIREMENTS -> settings.missingStatusItem();
+            default -> settings.lockedStatusItem();
         };
 
-        List<String> extraLore = switch (result.status()) {
-            case DISABLED -> List.of(settings.tradeDisabledMessage());
-            case NO_PERMISSION -> List.of(settings.tradeLockedMessage());
-            case ALREADY_COMPLETED -> List.of(completedMessage(trade));
-            default -> List.of();
-        };
+        List<String> extraLore = new ArrayList<>();
+        switch (result.status()) {
+            case DISABLED -> extraLore.add(settings.tradeDisabledMessage());
+            case NO_PERMISSION -> extraLore.add(settings.tradeLockedMessage());
+            case WORLD_BLOCKED -> extraLore.add(settings.tradeWorldBlockedMessage());
+            case NOT_STARTED -> extraLore.add(settings.tradeNotStartedMessage());
+            case EXPIRED -> extraLore.add(settings.tradeExpiredMessage());
+            case ALREADY_COMPLETED -> extraLore.add(completedMessage(trade));
+            default -> {
+            }
+        }
+        if (trade.moneyCost() > 0D) {
+            extraLore.add(settings.statusMoneyLine());
+        }
+        if (trade.expCost() > 0) {
+            extraLore.add(settings.statusExpLine());
+        }
         return createConfiguredItem(spec, player, replacements, extraLore);
     }
 
@@ -385,13 +458,13 @@ public final class TradeGuiService {
             case SUCCESS -> settings.tradeSuccessMessage();
             case DISABLED -> settings.tradeDisabledMessage();
             case NO_PERMISSION -> settings.tradeLockedMessage();
+            case WORLD_BLOCKED -> settings.tradeWorldBlockedMessage();
+            case NOT_STARTED -> settings.tradeNotStartedMessage();
+            case EXPIRED -> settings.tradeExpiredMessage();
             case ALREADY_COMPLETED -> completedMessage(trade);
-            case MISSING_ITEMS -> settings.tradeMissingMessage();
+            case MISSING_REQUIREMENTS -> settings.tradeMissingMessage();
         };
-        sendTradeMessage(player, trade, message, Map.of(
-            "missing_items", tradeManager.summarizeItems(result.missingItems()),
-            "missing_amount", String.valueOf(tradeManager.totalItemAmount(result.missingItems()))
-        ));
+        sendTradeMessage(player, trade, message, detailPlaceholders(player, trade, result));
     }
 
     private void sendTradeMessage(Player player, TradeDefinition trade, String message, Map<String, String> extraPlaceholders) {
@@ -405,10 +478,12 @@ public final class TradeGuiService {
         TradeCheckResult result = tradeManager.evaluateTrade(player, trade);
         return switch (result.status()) {
             case SUCCESS -> settings.indexStatusReady();
-            case MISSING_ITEMS -> settings.indexStatusCollecting();
+            case MISSING_REQUIREMENTS -> settings.indexStatusCollecting();
             case ALREADY_COMPLETED -> trade.maxTrades() == 1 ? settings.indexStatusUnlocked() : settings.indexStatusLimitReached();
             case DISABLED -> settings.indexStatusDisabled();
-            case NO_PERMISSION -> settings.indexStatusLocked();
+            case NOT_STARTED -> settings.indexStatusScheduled();
+            case EXPIRED -> settings.indexStatusExpired();
+            case WORLD_BLOCKED, NO_PERMISSION -> settings.indexStatusLocked();
         };
     }
 
@@ -416,6 +491,7 @@ public final class TradeGuiService {
         HashMap<String, String> replacements = new HashMap<>();
         String maxTrades = tradeManager.formattedMaxTrades(trade);
         String remainingTrades = tradeManager.formattedRemainingTrades(player, trade);
+        double playerBalance = tradeManager.playerBalance(player);
         replacements.put("player", player.getName());
         replacements.put("player_name", player.getName());
         replacements.put("player_uuid", player.getUniqueId().toString());
@@ -423,8 +499,17 @@ public final class TradeGuiService {
         replacements.put("trade_id", trade.id());
         replacements.put("trade_name", trade.displayName());
         replacements.put("trade_description", String.join(" ", trade.description()));
+        replacements.put("category", trade.category());
         replacements.put("trade_permission", tradeManager.effectivePermission(trade));
         replacements.put("ctext_file", tradeManager.effectiveCtextFile(trade));
+        replacements.put("allowed_worlds", tradeManager.allowedWorldsDescription(trade));
+        replacements.put("money_cost", tradeManager.formatMoney(trade.moneyCost()));
+        replacements.put("exp_cost", String.valueOf(trade.expCost()));
+        replacements.put("start_date", tradeManager.formattedDate(trade.startDate()));
+        replacements.put("end_date", tradeManager.formattedDate(trade.endDate()));
+        replacements.put("player_money", tradeManager.formatMoney(playerBalance));
+        replacements.put("player_level", String.valueOf(player.getLevel()));
+        replacements.put("current_world", player.getWorld().getName());
         replacements.put("requirements_count", String.valueOf(trade.requirements().size()));
         replacements.put("required_items", tradeManager.summarizeItems(trade.requirements()));
         replacements.put("item_cost", String.valueOf(tradeManager.totalItemAmount(trade.requirements())));
@@ -435,6 +520,9 @@ public final class TradeGuiService {
         replacements.put("remaining_uses", remainingTrades);
         replacements.put("missing_items", "");
         replacements.put("missing_amount", "0");
+        replacements.put("missing_money", "0");
+        replacements.put("missing_exp", "0");
+        replacements.put("missing_summary", "");
         return replacements;
     }
 
@@ -442,11 +530,32 @@ public final class TradeGuiService {
         HashMap<String, String> replacements = new HashMap<>(tradePlaceholders(player, trade));
         replacements.put("missing_items", tradeManager.summarizeItems(result.missingItems()));
         replacements.put("missing_amount", String.valueOf(tradeManager.totalItemAmount(result.missingItems())));
+        replacements.put("missing_money", tradeManager.formatMoney(result.missingMoney()));
+        replacements.put("missing_exp", String.valueOf(result.missingExpLevels()));
+        replacements.put("missing_summary", tradeManager.summarizeMissingRequirements(result));
+        replacements.put("allowed_worlds", result.allowedWorlds().isEmpty() ? tradeManager.allowedWorldsDescription(trade) : String.join(", ", result.allowedWorlds()));
+        replacements.put("current_world", result.currentWorld().isBlank() ? player.getWorld().getName() : result.currentWorld());
+        replacements.put("start_date", result.startDate() == null ? tradeManager.formattedDate(trade.startDate()) : tradeManager.formattedDate(result.startDate()));
+        replacements.put("end_date", result.endDate() == null ? tradeManager.formattedDate(trade.endDate()) : tradeManager.formattedDate(result.endDate()));
         return replacements;
     }
 
     private String completedMessage(TradeDefinition trade) {
         return trade.maxTrades() == 1 ? settings.tradeCompletedMessage() : settings.tradeLimitReachedMessage();
+    }
+
+    private boolean tradeAttemptStillCoolingDown(Player player) {
+        long now = System.currentTimeMillis();
+        long lastAttempt = lastTradeClickTimes.getOrDefault(player.getUniqueId(), 0L);
+        if (now - lastAttempt < settings.tradeClickCooldownMillis()) {
+            return true;
+        }
+        lastTradeClickTimes.put(player.getUniqueId(), now);
+        return false;
+    }
+
+    private String normalizeCategory(String category) {
+        return category == null ? "" : category.trim().toLowerCase();
     }
 
     private void schedule(Runnable task) {
@@ -474,12 +583,14 @@ public final class TradeGuiService {
         private final MenuType type;
         private final String tradeId;
         private final int page;
+        private final String category;
         private Inventory inventory;
 
-        private TradeMenuHolder(MenuType type, String tradeId, int page) {
+        private TradeMenuHolder(MenuType type, String tradeId, int page, String category) {
             this.type = type;
             this.tradeId = tradeId;
             this.page = page;
+            this.category = category == null ? "" : category;
         }
 
         public MenuType type() {
@@ -492,6 +603,10 @@ public final class TradeGuiService {
 
         public int page() {
             return page;
+        }
+
+        public String category() {
+            return category;
         }
 
         public void setInventory(Inventory inventory) {

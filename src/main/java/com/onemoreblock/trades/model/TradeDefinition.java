@@ -1,6 +1,7 @@
 package com.onemoreblock.trades.model;
 
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -14,12 +15,18 @@ public final class TradeDefinition {
     private final Path file;
     private final boolean enabled;
     private final int sortOrder;
+    private final String category;
     private final String displayName;
     private final List<String> description;
     private final String permission;
     private final String completionPermission;
     private final int maxTrades;
     private final boolean hideWhenCompleted;
+    private final List<String> allowedWorlds;
+    private final double moneyCost;
+    private final int expCost;
+    private final LocalDate startDate;
+    private final LocalDate endDate;
     private final String ctextFile;
     private final ItemStack iconItem;
     private final ItemStack rewardItem;
@@ -31,12 +38,18 @@ public final class TradeDefinition {
         Path file,
         boolean enabled,
         int sortOrder,
+        String category,
         String displayName,
         List<String> description,
         String permission,
         String completionPermission,
         int maxTrades,
         boolean hideWhenCompleted,
+        List<String> allowedWorlds,
+        double moneyCost,
+        int expCost,
+        LocalDate startDate,
+        LocalDate endDate,
         String ctextFile,
         ItemStack iconItem,
         ItemStack rewardItem,
@@ -47,12 +60,18 @@ public final class TradeDefinition {
         this.file = Objects.requireNonNull(file, "file");
         this.enabled = enabled;
         this.sortOrder = sortOrder;
+        this.category = Objects.requireNonNull(category, "category");
         this.displayName = Objects.requireNonNull(displayName, "displayName");
         this.description = Collections.unmodifiableList(new ArrayList<>(description));
         this.permission = Objects.requireNonNull(permission, "permission");
         this.completionPermission = Objects.requireNonNull(completionPermission, "completionPermission");
         this.maxTrades = maxTrades;
         this.hideWhenCompleted = hideWhenCompleted;
+        this.allowedWorlds = Collections.unmodifiableList(new ArrayList<>(allowedWorlds));
+        this.moneyCost = Math.max(0D, moneyCost);
+        this.expCost = Math.max(0, expCost);
+        this.startDate = startDate;
+        this.endDate = endDate;
         this.ctextFile = Objects.requireNonNull(ctextFile, "ctextFile");
         this.iconItem = iconItem == null ? null : iconItem.clone();
         this.rewardItem = rewardItem == null ? null : rewardItem.clone();
@@ -78,6 +97,10 @@ public final class TradeDefinition {
         return sortOrder;
     }
 
+    public String category() {
+        return category;
+    }
+
     public String displayName() {
         return displayName;
     }
@@ -100,6 +123,26 @@ public final class TradeDefinition {
 
     public boolean hideWhenCompleted() {
         return hideWhenCompleted;
+    }
+
+    public List<String> allowedWorlds() {
+        return allowedWorlds;
+    }
+
+    public double moneyCost() {
+        return moneyCost;
+    }
+
+    public int expCost() {
+        return expCost;
+    }
+
+    public LocalDate startDate() {
+        return startDate;
+    }
+
+    public LocalDate endDate() {
+        return endDate;
     }
 
     public String ctextFile() {
