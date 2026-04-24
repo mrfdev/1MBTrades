@@ -3,6 +3,7 @@ Thumbs.db
 
 .gradle/
 build/
+libs/
 out/
 
 .idea/
@@ -12,6 +13,7 @@ out/
 .project
 .settings/
 
+# Deprecated local Paper test servers. Use /Users/floris/Projects/Codex/servers/run-test-server instead.
 servers/
 logs/
 run/

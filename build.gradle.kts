@@ -8,7 +8,8 @@ data class BuildMetadata(
     val pluginVersion: String,
     val buildNumber: Int,
     val targetJavaVersion: Int,
-    val targetMinecraftVersion: String
+    val paperApiVersion: String,
+    val declaredApiVersion: String
 ) {
     val paddedBuildNumber: String
         get() = buildNumber.toString().padStart(3, '0')
@@ -16,8 +17,22 @@ data class BuildMetadata(
     val pluginDisplayVersion: String
         get() = "$pluginVersion-$paddedBuildNumber"
 
+    val paperApiDependencyVersion: String
+        get() = if (
+            paperApiVersion.endsWith("-R0.1-SNAPSHOT")
+            || paperApiVersion.contains(".build.")
+            || paperApiVersion.contains("-alpha")
+            || paperApiVersion.contains("-beta")
+            || paperApiVersion.contains("-rc")
+            || paperApiVersion.contains("-pre")
+        ) {
+            paperApiVersion
+        } else {
+            "$paperApiVersion-R0.1-SNAPSHOT"
+        }
+
     val archiveFileName: String
-        get() = "1MB-Trades-v$pluginVersion-$paddedBuildNumber-j$targetJavaVersion-$targetMinecraftVersion.jar"
+        get() = "1MB-Trades-v$pluginVersion-$paddedBuildNumber-j$targetJavaVersion-$paperApiVersion.jar"
 }
 
 val versionFile = layout.projectDirectory.file("version.properties").asFile
@@ -34,7 +49,8 @@ fun loadBuildMetadata(): BuildMetadata {
         pluginVersion = property("pluginVersion", "1.0.0"),
         buildNumber = property("buildNumber", "1").toInt(),
         targetJavaVersion = property("targetJavaVersion", "25").toInt(),
-        targetMinecraftVersion = property("targetMinecraftVersion", "1.21.11")
+        paperApiVersion = property("paperApiVersion", property("targetMinecraftVersion", "1.21.11")),
+        declaredApiVersion = property("declaredApiVersion", "1.21.11")
     )
 }
 
@@ -43,7 +59,8 @@ fun saveBuildMetadata(metadata: BuildMetadata) {
     properties.setProperty("pluginVersion", metadata.pluginVersion)
     properties.setProperty("buildNumber", metadata.paddedBuildNumber)
     properties.setProperty("targetJavaVersion", metadata.targetJavaVersion.toString())
-    properties.setProperty("targetMinecraftVersion", metadata.targetMinecraftVersion)
+    properties.setProperty("paperApiVersion", metadata.paperApiVersion)
+    properties.setProperty("declaredApiVersion", metadata.declaredApiVersion)
 
     versionFile.outputStream().use { output ->
         properties.store(output, "1MB-Trades build metadata")
@@ -88,7 +105,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:${buildMetadata.targetMinecraftVersion}-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:${buildMetadata.paperApiDependencyVersion}")
     compileOnly("me.clip:placeholderapi:2.12.2")
 }
 
@@ -105,16 +122,18 @@ tasks.processResources {
             "pluginVersion" to buildMetadata.pluginVersion,
             "buildNumber" to buildMetadata.paddedBuildNumber,
             "targetJavaVersion" to buildMetadata.targetJavaVersion.toString(),
-            "targetMinecraftVersion" to buildMetadata.targetMinecraftVersion
+            "paperApiVersion" to buildMetadata.paperApiVersion,
+            "declaredApiVersion" to buildMetadata.declaredApiVersion
         )
     )
-    filesMatching("plugin.yml") {
+    filesMatching(listOf("plugin.yml", "build-info.properties")) {
         expand(
             "version" to project.version,
             "pluginVersion" to buildMetadata.pluginVersion,
             "buildNumber" to buildMetadata.paddedBuildNumber,
             "targetJavaVersion" to buildMetadata.targetJavaVersion.toString(),
-            "targetMinecraftVersion" to buildMetadata.targetMinecraftVersion
+            "paperApiVersion" to buildMetadata.paperApiVersion,
+            "declaredApiVersion" to buildMetadata.declaredApiVersion
         )
     }
 }
@@ -127,7 +146,8 @@ tasks.jar {
             "Implementation-Version" to buildMetadata.pluginDisplayVersion,
             "Build-Number" to buildMetadata.paddedBuildNumber,
             "Target-Java-Version" to buildMetadata.targetJavaVersion.toString(),
-            "Target-Minecraft-Version" to buildMetadata.targetMinecraftVersion
+            "Paper-Api-Compile-Target" to buildMetadata.paperApiVersion,
+            "Declared-Api-Version" to buildMetadata.declaredApiVersion
         )
     }
 }
@@ -139,9 +159,18 @@ tasks.register("showVersionInfo") {
         println("Plugin version: ${buildMetadata.pluginVersion}")
         println("Build number: ${buildMetadata.paddedBuildNumber}")
         println("Target Java: ${buildMetadata.targetJavaVersion}")
-        println("Target Minecraft: ${buildMetadata.targetMinecraftVersion}")
+        println("Compile Paper API: ${buildMetadata.paperApiVersion}")
+        println("Paper API dependency: io.papermc.paper:paper-api:${buildMetadata.paperApiDependencyVersion}")
+        println("Declared api-version floor: ${buildMetadata.declaredApiVersion}")
         println("Archive name: ${buildMetadata.archiveFileName}")
     }
+}
+
+val copyReleaseJar = tasks.register<Copy>("copyReleaseJar") {
+    group = "build"
+    description = "Copies the latest built plugin jar into the project libs/ folder."
+    from(tasks.jar)
+    into(layout.projectDirectory.dir("libs"))
 }
 
 tasks.register("bumpPatchVersion") {
@@ -202,6 +231,7 @@ tasks.register("setPluginVersion") {
 }
 
 tasks.named("build") {
+    finalizedBy(copyReleaseJar)
     doLast {
         val current = loadBuildMetadata()
         val next = current.copy(buildNumber = current.buildNumber + 1)

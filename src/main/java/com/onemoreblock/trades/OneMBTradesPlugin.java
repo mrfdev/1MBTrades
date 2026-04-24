@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.stream.Stream;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
@@ -39,6 +40,9 @@ import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class OneMBTradesPlugin extends JavaPlugin {
+    public record BuildInfo(String pluginVersion, String buildNumber, String targetJavaVersion, String paperApiVersion, String declaredApiVersion) {
+    }
+
     private PluginSettings settings;
     private PlaceholderService placeholderService;
     private PlayerTradeDataStore playerTradeDataStore;
@@ -49,6 +53,7 @@ public final class OneMBTradesPlugin extends JavaPlugin {
     private TradeGuiService tradeGuiService;
     private PlaceholderRegistration placeholderRegistration;
     private Command globalAliasCommand;
+    private BuildInfo buildInfo;
 
     @Override
     public void onEnable() {
@@ -56,6 +61,7 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         mergeMissingConfigDefaults();
         migrateConfigDefaults();
         ensurePluginDataLayout();
+        buildInfo = loadBuildInfo();
 
         placeholderService = new PlaceholderService(this);
         playerTradeDataStore = new PlayerTradeDataStore(this);
@@ -84,7 +90,7 @@ public final class OneMBTradesPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        unregisterGlobalAliasCommand();
+        unregisterGlobalAliasCommand(true);
         if (placeholderRegistration != null) {
             placeholderRegistration.unregisterExpansion();
             placeholderRegistration = null;
@@ -109,6 +115,10 @@ public final class OneMBTradesPlugin extends JavaPlugin {
 
     public AuditLogService auditLogService() {
         return auditLogService;
+    }
+
+    public BuildInfo buildInfo() {
+        return buildInfo;
     }
 
     public boolean executeGlobalAlias(CommandSender sender, String[] args) {
@@ -159,6 +169,25 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         }
     }
 
+    private BuildInfo loadBuildInfo() {
+        Properties properties = new Properties();
+        try (InputStream input = getResource("build-info.properties")) {
+            if (input != null) {
+                properties.load(input);
+            }
+        } catch (IOException exception) {
+            getLogger().warning("Could not load build-info.properties: " + exception.getMessage());
+        }
+
+        return new BuildInfo(
+            properties.getProperty("pluginVersion", getPluginMeta().getVersion()),
+            properties.getProperty("buildNumber", "unknown"),
+            properties.getProperty("targetJavaVersion", "unknown"),
+            properties.getProperty("paperApiVersion", "unknown"),
+            properties.getProperty("declaredApiVersion", "unknown")
+        );
+    }
+
     private void ensurePluginDataLayout() {
         ensureFolder("Translations");
         ensureFolder("Trades");
@@ -205,17 +234,29 @@ public final class OneMBTradesPlugin extends JavaPlugin {
     }
 
     private void refreshGlobalAliasCommand() {
-        unregisterGlobalAliasCommand();
-
         String alias = settings.globalAlias();
         if (alias == null || alias.isBlank()) {
+            unregisterGlobalAliasCommand(false);
             syncCommands();
             return;
         }
 
         String normalizedAlias = alias.trim().toLowerCase(Locale.ROOT);
+        if (globalAliasCommand instanceof DynamicAliasCommand && globalAliasCommand.getName().equalsIgnoreCase(normalizedAlias)) {
+            globalAliasCommand.setDescription("Opens the configured 1MB-Trades entry point");
+            globalAliasCommand.setUsage("/" + normalizedAlias);
+            syncCommands();
+            return;
+        }
+
+        unregisterGlobalAliasCommand(false);
+
         CommandMap commandMap = getServer().getCommandMap();
         Command existingCommand = commandMap.getCommand(normalizedAlias);
+        if (existingCommand instanceof DynamicAliasCommand) {
+            purgeDynamicAlias(commandMap, existingCommand, normalizedAlias);
+            existingCommand = commandMap.getCommand(normalizedAlias);
+        }
         if (existingCommand != null) {
             getLogger().warning("Could not register global alias '/" + normalizedAlias + "' because a command with that name already exists.");
             syncCommands();
@@ -233,19 +274,16 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         syncCommands();
     }
 
-    private void unregisterGlobalAliasCommand() {
+    private void unregisterGlobalAliasCommand(boolean syncAfter) {
         if (globalAliasCommand == null) {
             return;
         }
 
-        CommandMap commandMap = getServer().getCommandMap();
-        globalAliasCommand.unregister(commandMap);
-        Map<String, Command> knownCommands = extractKnownCommands(commandMap);
-        if (knownCommands != null) {
-            knownCommands.entrySet().removeIf(entry -> entry.getValue() == globalAliasCommand);
-        }
+        purgeDynamicAlias(getServer().getCommandMap(), globalAliasCommand, globalAliasCommand.getName());
         globalAliasCommand = null;
-        syncCommands();
+        if (syncAfter) {
+            syncCommands();
+        }
     }
 
     private void syncCommands() {
@@ -267,6 +305,25 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         } catch (ReflectiveOperationException ignored) {
             return null;
         }
+    }
+
+    private void purgeDynamicAlias(CommandMap commandMap, Command command, String alias) {
+        if (command == null) {
+            return;
+        }
+
+        command.unregister(commandMap);
+        Map<String, Command> knownCommands = extractKnownCommands(commandMap);
+        if (knownCommands == null) {
+            return;
+        }
+
+        String normalizedAlias = alias == null ? "" : alias.trim().toLowerCase(Locale.ROOT);
+        knownCommands.entrySet().removeIf(entry -> {
+            String key = entry.getKey() == null ? "" : entry.getKey().toLowerCase(Locale.ROOT);
+            return entry.getValue() == command
+                || (!normalizedAlias.isBlank() && (key.equals(normalizedAlias) || key.endsWith(":" + normalizedAlias)));
+        });
     }
 
     private boolean migrateLocaleDefaults(File localeFile, FileConfiguration localeConfig) {

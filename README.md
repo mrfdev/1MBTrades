@@ -7,14 +7,15 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 ## Current Build Metadata
 
 - Plugin version: `1.0.1`
-- Next build number in `version.properties`: `023`
+- Next build number in `version.properties`: `027`
 - Target Java: `25`
-- Target Minecraft: `1.21.11`
+- Compile Paper API: `26.1.2.build.20-alpha`
+- Declared `api-version` floor: `1.21.11`
 - Artifact naming pattern: `1MB-Trades-v<pluginVersion>-<build>-j<java>-<minecraft>.jar`
 
 The latest built local artifact in this workspace is:
 
-- `build/libs/1MB-Trades-v1.0.1-022-j25-1.21.11.jar`
+- `libs/1MB-Trades-v1.0.1-026-j25-26.1.2.build.20-alpha.jar`
 
 ## Features
 
@@ -93,7 +94,7 @@ Development references:
 - [CMILib source](https://github.com/Zrips/CMILib)
 - [CMI-API source](https://github.com/Zrips/CMI-API)
 
-Note: the current codebase compiles only against the Paper API and integrates with CMI, PlaceholderAPI, LuckPerms, and Vault at runtime through commands and placeholder resolution. CMI-API is not required to compile or run the current version.
+Note: the current codebase compiles against the official Paper API `26.1.2.build.20-alpha`, declares `api-version: 1.21.11` in `plugin.yml`, and integrates with CMI, PlaceholderAPI, LuckPerms, and Vault at runtime through commands and placeholder resolution. CMI-API is not required to compile or run the current version.
 
 The plugin now also registers its own internal PlaceholderAPI expansion with the identifier:
 
@@ -102,7 +103,7 @@ The plugin now also registers its own internal PlaceholderAPI expansion with the
 ## Installation
 
 1. Build the plugin with Java 25.
-2. Copy the generated jar from `build/libs/` into your server `plugins/` folder.
+2. Copy the generated jar from `libs/` into your server `plugins/` folder.
 3. Start the server once so `plugins/1MB-Trades/` is created.
 4. Edit:
    - `plugins/1MB-Trades/config.yml`
@@ -125,9 +126,25 @@ Available Gradle tasks:
 
 Behavior:
 
-- `build` creates a jar using the current metadata
+- `build` creates a jar in `build/libs/` and copies the same jar into `libs/`
 - after a successful build, the build number is automatically incremented for the next compile
 - version bump tasks reset the build number to `001`
+- `showVersionInfo` prints the Java target, the Paper API compile target, the exact Paper dependency notation, and the declared `api-version` floor
+
+## Centralized Test Runner
+
+This project now uses the centralized Paper runner at:
+
+- `/Users/floris/Projects/Codex/servers/run-test-server`
+
+Do not rely on or recreate a repo-local `/servers/` test setup for normal development. If a local `servers/` folder exists in this repo, it is ignored and considered deprecated.
+
+Foreground examples:
+
+```bash
+/Users/floris/Projects/Codex/servers/run-test-server --paper 1.21.11 --plugin libs/1MB-Trades-v1.0.1-026-j25-26.1.2.build.20-alpha.jar --foreground
+/Users/floris/Projects/Codex/servers/run-test-server --paper 26.1.2 --plugin libs/1MB-Trades-v1.0.1-026-j25-26.1.2.build.20-alpha.jar --foreground
+```
 
 Example:
 
@@ -722,7 +739,7 @@ git push -u origin main
 
 Deferred items that are intentionally shelved for a later milestone:
 
-- Add automated smoke and regression testing for the Paper `1.21.11` and `26.1.2` test servers.
+- Add automated smoke and regression coverage that drives the centralized `/Users/floris/Projects/Codex/servers/run-test-server` flow.
 - Explore optional hidden item fingerprinting with PersistentDataContainer for stronger anti-counterfeit item matching.
 - Consider cooldown-based repeat-trade controls that are separate from `max-trades`.
 - Consider reusable reward presets or grouped reward packages for multiple trades.

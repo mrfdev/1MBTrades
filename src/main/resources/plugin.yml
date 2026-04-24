@@ -1,7 +1,7 @@
 name: 1MB-Trades
 main: com.onemoreblock.trades.OneMBTradesPlugin
 version: ${version}
-api-version: "1.21"
+api-version: "${declaredApiVersion}"
 author: Floris
 description: Custom trade menus and unique-item exchanges for 1MoreBlock.com
 softdepend:

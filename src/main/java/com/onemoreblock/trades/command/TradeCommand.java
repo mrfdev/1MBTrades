@@ -304,8 +304,12 @@ public final class TradeCommand implements TabExecutor, Listener {
 
         Player context = sender instanceof Player player ? player : null;
         if (args.length == 0 || "index".equalsIgnoreCase(args[0])) {
+            OneMBTradesPlugin.BuildInfo buildInfo = plugin.buildInfo();
             sendSystemLine(sender, "<gradient:#F6D365:#FDA085>[1MB-Trades] Environment</gradient>");
             sendSystemLine(sender, "<gray>Plugin:</gray> <white>%value%</white>", Map.of("value", plugin.getPluginMeta().getVersion()));
+            sendSystemLine(sender, "<gray>Build Java target:</gray> <white>%value%</white>", Map.of("value", buildInfo.targetJavaVersion()));
+            sendSystemLine(sender, "<gray>Compile Paper API:</gray> <white>%value%</white>", Map.of("value", buildInfo.paperApiVersion()));
+            sendSystemLine(sender, "<gray>Declared api-version:</gray> <white>%value%</white>", Map.of("value", buildInfo.declaredApiVersion()));
             sendSystemLine(sender, "<gray>Java:</gray> <white>%value%</white>", Map.of("value", System.getProperty("java.version")));
             sendSystemLine(sender, "<gray>Server:</gray> <white>%value%</white>", Map.of("value", Bukkit.getName() + " / " + Bukkit.getVersion()));
             sendSystemLine(sender, "<gray>Bukkit:</gray> <white>%value%</white>", Map.of("value", Bukkit.getBukkitVersion()));
