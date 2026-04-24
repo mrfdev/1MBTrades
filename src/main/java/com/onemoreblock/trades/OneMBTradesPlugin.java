@@ -2,6 +2,7 @@ package com.onemoreblock.trades;
 
 import com.onemoreblock.trades.command.TradeCommand;
 import com.onemoreblock.trades.config.PluginSettings;
+import com.onemoreblock.trades.config.YamlConfigSupport;
 import com.onemoreblock.trades.gui.TradeGuiService;
 import com.onemoreblock.trades.gui.TradeMenuListener;
 import com.onemoreblock.trades.placeholder.PlaceholderRegistration;
@@ -15,13 +16,11 @@ import com.onemoreblock.trades.service.TradeManager;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -226,9 +225,9 @@ public final class OneMBTradesPlugin extends JavaPlugin {
             }
         }
         mergeMissingYamlDefaults(configuredFile, "Translations/" + configuredFile.getName());
-        FileConfiguration localeConfig = YamlConfiguration.loadConfiguration(configuredFile);
+        FileConfiguration localeConfig = YamlConfigSupport.load(configuredFile, getLogger());
         if (migrateLocaleDefaults(configuredFile, localeConfig)) {
-            localeConfig = YamlConfiguration.loadConfiguration(configuredFile);
+            localeConfig = YamlConfigSupport.load(configuredFile, getLogger());
         }
         return localeConfig;
     }
@@ -378,8 +377,8 @@ public final class OneMBTradesPlugin extends JavaPlugin {
                 return false;
             }
 
-            YamlConfiguration existing = YamlConfiguration.loadConfiguration(targetFile);
-            YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(input, StandardCharsets.UTF_8));
+            YamlConfiguration existing = YamlConfigSupport.load(targetFile, getLogger());
+            YamlConfiguration defaults = YamlConfigSupport.load(input, getLogger(), resourcePath);
             boolean changed = false;
             for (String path : defaults.getKeys(true)) {
                 if (existing.contains(path)) {

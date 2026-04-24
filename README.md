@@ -7,7 +7,7 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 ## Current Build Metadata
 
 - Plugin version: `1.0.1`
-- Next build number in `version.properties`: `027`
+- Next build number in `version.properties`: `029`
 - Target Java: `25`
 - Compile Paper API: `26.1.2.build.20-alpha`
 - Declared `api-version` floor: `1.21.11`
@@ -15,7 +15,7 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 
 The latest built local artifact in this workspace is:
 
-- `libs/1MB-Trades-v1.0.1-026-j25-26.1.2.build.20-alpha.jar`
+- `libs/1MB-Trades-v1.0.1-028-j25-26.1.2.build.20-alpha.jar`
 
 ## Features
 
@@ -130,6 +130,7 @@ Behavior:
 - after a successful build, the build number is automatically incremented for the next compile
 - version bump tasks reset the build number to `001`
 - `showVersionInfo` prints the Java target, the Paper API compile target, the exact Paper dependency notation, and the declared `api-version` floor
+- Java compilation enables deprecation and removal lint so API drift shows up during builds before release
 
 ## Centralized Test Runner
 
@@ -142,8 +143,8 @@ Do not rely on or recreate a repo-local `/servers/` test setup for normal develo
 Foreground examples:
 
 ```bash
-/Users/floris/Projects/Codex/servers/run-test-server --paper 1.21.11 --plugin libs/1MB-Trades-v1.0.1-026-j25-26.1.2.build.20-alpha.jar --foreground
-/Users/floris/Projects/Codex/servers/run-test-server --paper 26.1.2 --plugin libs/1MB-Trades-v1.0.1-026-j25-26.1.2.build.20-alpha.jar --foreground
+/Users/floris/Projects/Codex/servers/run-test-server --paper 1.21.11 --plugin libs/1MB-Trades-v1.0.1-028-j25-26.1.2.build.20-alpha.jar --foreground
+/Users/floris/Projects/Codex/servers/run-test-server --paper 26.1.2 --plugin libs/1MB-Trades-v1.0.1-028-j25-26.1.2.build.20-alpha.jar --foreground
 ```
 
 Example:

@@ -1,6 +1,7 @@
 package com.onemoreblock.trades.service;
 
 import com.onemoreblock.trades.config.PluginSettings;
+import com.onemoreblock.trades.config.YamlConfigSupport;
 import com.onemoreblock.trades.model.TradeCheckResult;
 import com.onemoreblock.trades.model.TradeDefinition;
 import com.onemoreblock.trades.model.TradeTrigger;
@@ -185,7 +186,7 @@ public final class TradeManager {
             throw new IllegalArgumentException("Trade already exists: " + normalizedTarget);
         }
 
-        YamlConfiguration sourceConfig = YamlConfiguration.loadConfiguration(source.file().toFile());
+        YamlConfiguration sourceConfig = YamlConfigSupport.load(source.file(), plugin.getLogger());
         sourceConfig.set("id", normalizedTarget);
         Path targetPath = tradePath(normalizedTarget);
         sourceConfig.save(targetPath.toFile());
@@ -592,7 +593,7 @@ public final class TradeManager {
 
     private void loadTradeFile(Path path) {
         try {
-            YamlConfiguration config = YamlConfiguration.loadConfiguration(path.toFile());
+            YamlConfiguration config = YamlConfigSupport.load(path, plugin.getLogger());
             String id = normalizeId(config.getString("id", stripExtension(path.getFileName().toString())));
             if (!isValidTradeId(id)) {
                 warn(path, "Trade id '" + id + "' is invalid.");
@@ -675,7 +676,7 @@ public final class TradeManager {
             throw new IllegalArgumentException("Trade not found: " + normalized);
         }
 
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(path.toFile());
+        YamlConfiguration config = YamlConfigSupport.load(path, plugin.getLogger());
         mutator.accept(config);
         config.save(path.toFile());
         reloadAll();

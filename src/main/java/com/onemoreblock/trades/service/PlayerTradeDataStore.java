@@ -1,5 +1,6 @@
 package com.onemoreblock.trades.service;
 
+import com.onemoreblock.trades.config.YamlConfigSupport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -180,7 +181,7 @@ public final class PlayerTradeDataStore {
             return new PlayerTradeProfile(uuid, "", new LinkedHashMap<>());
         }
 
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(file.toFile());
+        YamlConfiguration config = YamlConfigSupport.load(file, plugin.getLogger());
         String lastKnownName = config.getString("last-known-name", "");
         Map<String, TradeProgress> tradeProgress = new LinkedHashMap<>();
 

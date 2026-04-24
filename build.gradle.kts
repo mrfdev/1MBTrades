@@ -84,6 +84,14 @@ fun bumpPluginVersion(current: String, mode: String): String {
 }
 
 val buildMetadata = loadBuildMetadata()
+val resourceExpansionProperties = mapOf(
+    "version" to buildMetadata.pluginDisplayVersion,
+    "pluginVersion" to buildMetadata.pluginVersion,
+    "buildNumber" to buildMetadata.paddedBuildNumber,
+    "targetJavaVersion" to buildMetadata.targetJavaVersion.toString(),
+    "paperApiVersion" to buildMetadata.paperApiVersion,
+    "declaredApiVersion" to buildMetadata.declaredApiVersion
+)
 
 group = "com.onemoreblock"
 version = buildMetadata.pluginDisplayVersion
@@ -112,29 +120,14 @@ dependencies {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(buildMetadata.targetJavaVersion)
+    options.compilerArgs.addAll(listOf("-Xlint:deprecation", "-Xlint:removal"))
 }
 
 tasks.processResources {
     filteringCharset = "UTF-8"
-    inputs.properties(
-        mapOf(
-            "pluginDisplayVersion" to buildMetadata.pluginDisplayVersion,
-            "pluginVersion" to buildMetadata.pluginVersion,
-            "buildNumber" to buildMetadata.paddedBuildNumber,
-            "targetJavaVersion" to buildMetadata.targetJavaVersion.toString(),
-            "paperApiVersion" to buildMetadata.paperApiVersion,
-            "declaredApiVersion" to buildMetadata.declaredApiVersion
-        )
-    )
+    inputs.properties(resourceExpansionProperties)
     filesMatching(listOf("plugin.yml", "build-info.properties")) {
-        expand(
-            "version" to project.version,
-            "pluginVersion" to buildMetadata.pluginVersion,
-            "buildNumber" to buildMetadata.paddedBuildNumber,
-            "targetJavaVersion" to buildMetadata.targetJavaVersion.toString(),
-            "paperApiVersion" to buildMetadata.paperApiVersion,
-            "declaredApiVersion" to buildMetadata.declaredApiVersion
-        )
+        expand(resourceExpansionProperties)
     }
 }
 
