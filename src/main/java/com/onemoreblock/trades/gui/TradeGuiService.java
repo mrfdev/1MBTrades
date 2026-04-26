@@ -17,7 +17,9 @@ import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -28,6 +30,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
 
 public final class TradeGuiService {
+    private static final long GUI_CLOSE_DELAY_TICKS = 4L;
+    private static final long GUI_FOLLOW_UP_DELAY_TICKS = 5L;
     private static final int MENU_SIZE = 54;
     private static final int INDEX_PAGE_SIZE = 45;
     private static final int SLOT_REWARD = 40;
@@ -48,7 +52,10 @@ public final class TradeGuiService {
     private final PlaceholderService placeholderService;
     private final AuditLogService auditLogService;
     private final Map<UUID, Long> lastTradeClickTimes;
+    private final Map<UUID, Long> activeMenuSessions;
+    private final Map<UUID, Long> processingTradeSessions;
     private PluginSettings settings;
+    private long nextSessionId;
 
     public TradeGuiService(
         JavaPlugin plugin,
@@ -65,6 +72,9 @@ public final class TradeGuiService {
         this.auditLogService = auditLogService;
         this.settings = settings;
         this.lastTradeClickTimes = new HashMap<>();
+        this.activeMenuSessions = new HashMap<>();
+        this.processingTradeSessions = new HashMap<>();
+        this.nextSessionId = 1L;
     }
 
     public void setSettings(PluginSettings settings) {
@@ -80,13 +90,17 @@ public final class TradeGuiService {
     }
 
     public void openIndex(Player player, int page, String category) {
+        if (!canUsePlayer(player)) {
+            return;
+        }
+
         boolean adminView = player.hasPermission(settings.adminPermission());
         List<TradeDefinition> visibleTrades = tradeManager.visibleTrades(player, adminView, category);
         int maxPage = Math.max(1, (int) Math.ceil(visibleTrades.size() / (double) INDEX_PAGE_SIZE));
         int currentPage = Math.max(0, Math.min(page, maxPage - 1));
 
         String categoryFilter = normalizeCategory(category);
-        TradeMenuHolder holder = new TradeMenuHolder(MenuType.INDEX, null, currentPage, categoryFilter);
+        TradeMenuHolder holder = new TradeMenuHolder(MenuType.INDEX, null, currentPage, categoryFilter, nextSessionId());
         Map<String, String> titleReplacements = Map.of(
             "category", categoryFilter.isBlank() ? "all" : categoryFilter,
             "category_name", categoryFilter.isBlank() ? "All Trades" : tradeManager.categoryDisplayName(categoryFilter)
@@ -117,6 +131,7 @@ public final class TradeGuiService {
             inventory.setItem(index - startIndex, createTradeIndexItem(player, trade, adminView));
         }
 
+        registerActiveSession(player, holder);
         player.openInventory(inventory);
         commandActionService.runIndexOpen(player);
     }
@@ -126,6 +141,10 @@ public final class TradeGuiService {
     }
 
     public boolean openTrade(Player player, TradeDefinition trade, int returnPage, String returnCategory) {
+        if (!canUsePlayer(player)) {
+            return false;
+        }
+
         boolean adminView = player.hasPermission(settings.adminPermission());
         if (!adminView) {
             if (!trade.enabled()) {
@@ -139,7 +158,7 @@ public final class TradeGuiService {
         }
 
         Map<String, String> replacements = tradePlaceholders(player, trade);
-        TradeMenuHolder holder = new TradeMenuHolder(MenuType.DETAIL, trade.id(), returnPage, normalizeCategory(returnCategory));
+        TradeMenuHolder holder = new TradeMenuHolder(MenuType.DETAIL, trade.id(), returnPage, normalizeCategory(returnCategory), nextSessionId());
         Inventory inventory = Bukkit.createInventory(
             holder,
             MENU_SIZE,
@@ -165,6 +184,7 @@ public final class TradeGuiService {
             inventory.setItem(REQUIREMENT_SLOTS.get(index), createRequirementPreview(player, trade, requirement));
         }
 
+        registerActiveSession(player, holder);
         player.openInventory(inventory);
         commandActionService.runTradeTrigger(player, trade, TradeTrigger.OPEN_TRADE, replacements);
         return true;
@@ -172,7 +192,7 @@ public final class TradeGuiService {
 
     public void handleClick(InventoryClickEvent event) {
         Inventory topInventory = event.getView().getTopInventory();
-        if (!(topInventory.getHolder() instanceof TradeMenuHolder holder)) {
+        if (!(topInventory.getHolder(false) instanceof TradeMenuHolder holder)) {
             return;
         }
 
@@ -180,24 +200,66 @@ public final class TradeGuiService {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+        if (!isCurrentSession(player, holder)) {
+            return;
+        }
+        int slot = event.getRawSlot();
+        if (slot < 0 || slot >= topInventory.getSize()) {
+            return;
+        }
         if (event.getClickedInventory() == null || !event.getClickedInventory().equals(topInventory)) {
             return;
         }
-
-        int slot = event.getRawSlot();
+        if (!isActionableButtonClick(event.getClick())) {
+            return;
+        }
         switch (holder.type()) {
-            case INDEX -> handleIndexClick(player, holder.page(), holder.category(), slot);
-            case DETAIL -> handleDetailClick(player, holder.tradeId(), holder.page(), holder.category(), slot);
+            case INDEX -> handleIndexClick(player, holder, slot);
+            case DETAIL -> handleDetailClick(player, holder, slot);
         }
     }
 
     public void handleDrag(InventoryDragEvent event) {
-        if (event.getInventory().getHolder() instanceof TradeMenuHolder) {
+        if (isTradeMenuInventory(event.getView().getTopInventory())) {
             event.setCancelled(true);
         }
     }
 
-    private void handleIndexClick(Player player, int page, String category, int slot) {
+    public void handleClose(InventoryCloseEvent event) {
+        Inventory topInventory = event.getView().getTopInventory();
+        if (!(topInventory.getHolder(false) instanceof TradeMenuHolder holder)) {
+            return;
+        }
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+
+        clearActiveSession(player.getUniqueId(), holder.sessionId());
+        releaseTradeProcessing(player.getUniqueId(), holder.sessionId());
+    }
+
+    public void handlePlayerDisconnect(Player player) {
+        if (player == null) {
+            return;
+        }
+        clearPlayerState(player.getUniqueId(), true);
+    }
+
+    public void shutdown() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (isTradeMenuInventory(player.getOpenInventory().getTopInventory())) {
+                player.closeInventory();
+            }
+            clearPlayerState(player.getUniqueId(), true);
+        }
+        activeMenuSessions.clear();
+        processingTradeSessions.clear();
+        lastTradeClickTimes.clear();
+    }
+
+    private void handleIndexClick(Player player, TradeMenuHolder holder, int slot) {
+        int page = holder.page();
+        String category = holder.category();
         boolean adminView = player.hasPermission(settings.adminPermission());
         List<TradeDefinition> visibleTrades = tradeManager.visibleTrades(player, adminView, category);
         int maxPage = Math.max(1, (int) Math.ceil(visibleTrades.size() / (double) INDEX_PAGE_SIZE));
@@ -206,73 +268,121 @@ public final class TradeGuiService {
             int index = page * INDEX_PAGE_SIZE + slot;
             if (index >= 0 && index < visibleTrades.size()) {
                 TradeDefinition trade = visibleTrades.get(index);
-                schedule(() -> openTrade(player, trade, page, category));
+                schedule(() -> {
+                    if (canUsePlayer(player)) {
+                        openTrade(player, trade, page, category);
+                    }
+                });
             }
             return;
         }
 
         if (slot == SLOT_PREVIOUS && page > 0) {
-            schedule(() -> openIndex(player, page - 1, category));
+            schedule(() -> {
+                if (canUsePlayer(player)) {
+                    openIndex(player, page - 1, category);
+                }
+            });
             return;
         }
         if (slot == SLOT_NEXT && page + 1 < maxPage) {
-            schedule(() -> openIndex(player, page + 1, category));
+            schedule(() -> {
+                if (canUsePlayer(player)) {
+                    openIndex(player, page + 1, category);
+                }
+            });
             return;
         }
         if (slot == SLOT_CLOSE) {
-            schedule(player::closeInventory);
+            scheduleCloseIfViewingSession(player, holder.sessionId());
         }
     }
 
-    private void handleDetailClick(Player player, String tradeId, int page, String category, int slot) {
-        TradeDefinition trade = tradeManager.findTrade(tradeId).orElse(null);
+    private void handleDetailClick(Player player, TradeMenuHolder holder, int slot) {
+        TradeDefinition trade = tradeManager.findTrade(holder.tradeId()).orElse(null);
         if (trade == null) {
-            placeholderService.sendMessage(player, player, settings.tradeNotFoundMessage(), Map.of("trade_id", tradeId));
-            schedule(player::closeInventory);
+            placeholderService.sendMessage(player, player, settings.tradeNotFoundMessage(), Map.of("trade_id", holder.tradeId()));
+            scheduleCloseIfViewingSession(player, holder.sessionId());
             return;
         }
 
         if (slot == SLOT_INFO) {
+            if (!canInteractWithTrade(player, trade)) {
+                return;
+            }
             Map<String, String> replacements = detailPlaceholders(player, trade, tradeManager.evaluateTrade(player, trade));
-            schedule(player::closeInventory);
-            scheduleLater(() -> commandActionService.runTradeTrigger(player, trade, TradeTrigger.INFO, replacements), 1L);
+            scheduleCloseIfViewingSession(player, holder.sessionId());
+            scheduleLater(() -> {
+                if (canUsePlayer(player) && !isViewingTradeMenuSession(player, holder.sessionId())) {
+                    commandActionService.runTradeTrigger(player, trade, TradeTrigger.INFO, replacements);
+                }
+            }, GUI_FOLLOW_UP_DELAY_TICKS);
             return;
         }
         if (slot == SLOT_TRADE) {
-            if (tradeAttemptStillCoolingDown(player)) {
+            if (!canInteractWithTrade(player, trade)) {
+                return;
+            }
+            if (!claimTradeProcessing(player.getUniqueId(), holder.sessionId())) {
                 placeholderService.sendMessage(player, player, settings.tradeBusyMessage(), Map.of());
                 return;
             }
 
-            TradeCheckResult result = tradeManager.consumeTrade(player, trade);
-            Map<String, String> replacements = detailPlaceholders(player, trade, result);
-            sendResultMessage(player, trade, result);
-            auditLogService.logTradeAttempt(player, trade, result, Map.of(
-                "uses", String.valueOf(tradeManager.tradeUses(player, trade)),
-                "remaining_uses", tradeManager.formattedRemainingTrades(player, trade),
-                "money_cost", tradeManager.formatMoney(trade.moneyCost()),
-                "exp_cost", String.valueOf(trade.expCost()),
-                "missing_summary", tradeManager.summarizeMissingRequirements(result)
-            ));
-            if (result.success()) {
-                commandActionService.runTradeTrigger(player, trade, TradeTrigger.SUCCESS, replacements);
-                if (settings.closeOnSuccess()) {
-                    schedule(player::closeInventory);
-                } else {
-                    schedule(() -> openTrade(player, trade, page, category));
+            boolean deferredRelease = false;
+            try {
+                if (tradeAttemptStillCoolingDown(player)) {
+                    placeholderService.sendMessage(player, player, settings.tradeBusyMessage(), Map.of());
+                    return;
                 }
-            } else {
-                commandActionService.runTradeTrigger(player, trade, TradeTrigger.FAIL, replacements);
-                schedule(() -> openTrade(player, trade, page, category));
+
+                TradeCheckResult result = tradeManager.consumeTrade(player, trade);
+                Map<String, String> replacements = detailPlaceholders(player, trade, result);
+                sendResultMessage(player, trade, result);
+                auditLogService.logTradeAttempt(player, trade, result, Map.of(
+                    "uses", String.valueOf(tradeManager.tradeUses(player, trade)),
+                    "remaining_uses", tradeManager.formattedRemainingTrades(player, trade),
+                    "money_cost", tradeManager.formatMoney(trade.moneyCost()),
+                    "exp_cost", String.valueOf(trade.expCost()),
+                    "missing_summary", tradeManager.summarizeMissingRequirements(result)
+                ));
+                if (result.success()) {
+                    commandActionService.runTradeTrigger(player, trade, TradeTrigger.SUCCESS, replacements);
+                    if (settings.closeOnSuccess()) {
+                        scheduleCloseIfViewingSession(player, holder.sessionId());
+                    } else {
+                        schedule(() -> {
+                            if (canUsePlayer(player)) {
+                                openTrade(player, trade, holder.page(), holder.category());
+                            }
+                        });
+                    }
+                } else {
+                    commandActionService.runTradeTrigger(player, trade, TradeTrigger.FAIL, replacements);
+                    schedule(() -> {
+                        if (canUsePlayer(player)) {
+                            openTrade(player, trade, holder.page(), holder.category());
+                        }
+                    });
+                }
+                deferredRelease = true;
+                schedule(() -> releaseTradeProcessing(player.getUniqueId(), holder.sessionId()));
+                return;
+            } finally {
+                if (!deferredRelease) {
+                    releaseTradeProcessing(player.getUniqueId(), holder.sessionId());
+                }
             }
-            return;
         }
         if (slot == SLOT_BACK) {
-            schedule(() -> openIndex(player, page, category));
+            schedule(() -> {
+                if (canUsePlayer(player)) {
+                    openIndex(player, holder.page(), holder.category());
+                }
+            });
             return;
         }
         if (slot == SLOT_CLOSE) {
-            schedule(player::closeInventory);
+            scheduleCloseIfViewingSession(player, holder.sessionId());
         }
     }
 
@@ -554,6 +664,87 @@ public final class TradeGuiService {
         return false;
     }
 
+    private boolean canInteractWithTrade(Player player, TradeDefinition trade) {
+        if (player.hasPermission(settings.adminPermission())) {
+            return true;
+        }
+        if (!trade.enabled()) {
+            sendTradeMessage(player, trade, settings.tradeDisabledMessage(), Map.of());
+            return false;
+        }
+        if (!tradeManager.hasAccess(player, trade, false)) {
+            sendTradeMessage(player, trade, settings.tradeLockedMessage(), Map.of());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean canUsePlayer(Player player) {
+        return player != null && player.isOnline();
+    }
+
+    private boolean isTradeMenuInventory(Inventory inventory) {
+        return inventory != null && inventory.getHolder(false) instanceof TradeMenuHolder;
+    }
+
+    private boolean isViewingTradeMenuSession(Player player, long sessionId) {
+        if (!canUsePlayer(player)) {
+            return false;
+        }
+        Inventory openTopInventory = player.getOpenInventory().getTopInventory();
+        if (!(openTopInventory.getHolder(false) instanceof TradeMenuHolder holder)) {
+            return false;
+        }
+        return holder.sessionId() == sessionId && isCurrentSession(player, holder);
+    }
+
+    private boolean isCurrentSession(Player player, TradeMenuHolder holder) {
+        return activeMenuSessions.getOrDefault(player.getUniqueId(), -1L) == holder.sessionId();
+    }
+
+    private boolean isActionableButtonClick(ClickType clickType) {
+        return clickType == ClickType.LEFT || clickType == ClickType.RIGHT;
+    }
+
+    private void registerActiveSession(Player player, TradeMenuHolder holder) {
+        activeMenuSessions.put(player.getUniqueId(), holder.sessionId());
+    }
+
+    private boolean claimTradeProcessing(UUID playerId, long sessionId) {
+        if (processingTradeSessions.containsKey(playerId)) {
+            return false;
+        }
+        processingTradeSessions.put(playerId, sessionId);
+        return true;
+    }
+
+    private void clearActiveSession(UUID playerId, long sessionId) {
+        if (activeMenuSessions.getOrDefault(playerId, -1L) == sessionId) {
+            activeMenuSessions.remove(playerId);
+        }
+    }
+
+    private void releaseTradeProcessing(UUID playerId, long sessionId) {
+        if (processingTradeSessions.getOrDefault(playerId, -1L) == sessionId) {
+            processingTradeSessions.remove(playerId);
+        }
+    }
+
+    private void clearPlayerState(UUID playerId, boolean clearCooldown) {
+        activeMenuSessions.remove(playerId);
+        processingTradeSessions.remove(playerId);
+        if (clearCooldown) {
+            lastTradeClickTimes.remove(playerId);
+        }
+    }
+
+    private long nextSessionId() {
+        if (nextSessionId == Long.MAX_VALUE) {
+            nextSessionId = 1L;
+        }
+        return nextSessionId++;
+    }
+
     private String normalizeCategory(String category) {
         return category == null ? "" : category.trim().toLowerCase();
     }
@@ -564,6 +755,14 @@ public final class TradeGuiService {
 
     private void scheduleLater(Runnable task, long delayTicks) {
         plugin.getServer().getScheduler().runTaskLater(plugin, task, delayTicks);
+    }
+
+    private void scheduleCloseIfViewingSession(Player player, long sessionId) {
+        scheduleLater(() -> {
+            if (isViewingTradeMenuSession(player, sessionId)) {
+                player.closeInventory();
+            }
+        }, GUI_CLOSE_DELAY_TICKS);
     }
 
     private static List<Integer> buildRequirementSlots() {
@@ -584,13 +783,15 @@ public final class TradeGuiService {
         private final String tradeId;
         private final int page;
         private final String category;
+        private final long sessionId;
         private Inventory inventory;
 
-        private TradeMenuHolder(MenuType type, String tradeId, int page, String category) {
+        private TradeMenuHolder(MenuType type, String tradeId, int page, String category, long sessionId) {
             this.type = type;
             this.tradeId = tradeId;
             this.page = page;
             this.category = category == null ? "" : category;
+            this.sessionId = sessionId;
         }
 
         public MenuType type() {
@@ -607,6 +808,10 @@ public final class TradeGuiService {
 
         public String category() {
             return category;
+        }
+
+        public long sessionId() {
+            return sessionId;
         }
 
         public void setInventory(Inventory inventory) {

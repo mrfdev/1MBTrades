@@ -36,6 +36,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class TradeManager {
     private static final Pattern VALID_TRADE_ID = Pattern.compile("^[a-z0-9_-]+$");
+    private static final Pattern VALID_CTEXT_FILE = Pattern.compile("^[A-Za-z0-9._-]*$");
     private static final DecimalFormat MONEY_FORMAT = new DecimalFormat("#,##0.##", DecimalFormatSymbols.getInstance(Locale.US));
 
     private final JavaPlugin plugin;
@@ -135,10 +136,7 @@ public final class TradeManager {
     }
 
     public Path createTrade(String id) throws IOException {
-        String normalized = normalizeId(id);
-        if (!isValidTradeId(normalized)) {
-            throw new IllegalArgumentException("Invalid trade id: " + id);
-        }
+        String normalized = requireValidTradeId(id);
         if (findTrade(normalized).isPresent()) {
             throw new IllegalArgumentException("Trade already exists: " + normalized);
         }
@@ -178,10 +176,7 @@ public final class TradeManager {
 
     public Path cloneTrade(String sourceId, String newId) throws IOException {
         TradeDefinition source = findTrade(sourceId).orElseThrow(() -> new IllegalArgumentException("Trade not found: " + sourceId));
-        String normalizedTarget = normalizeId(newId);
-        if (!isValidTradeId(normalizedTarget)) {
-            throw new IllegalArgumentException("Invalid trade id: " + newId);
-        }
+        String normalizedTarget = requireValidTradeId(newId);
         if (findTrade(normalizedTarget).isPresent()) {
             throw new IllegalArgumentException("Trade already exists: " + normalizedTarget);
         }
@@ -281,7 +276,11 @@ public final class TradeManager {
     }
 
     public void setCtextFile(String id, String ctextFile) throws IOException {
-        mutateTrade(id, config -> config.set("ctext-file", ctextFile));
+        String sanitized = ctextFile == null ? "" : ctextFile.trim();
+        if (!VALID_CTEXT_FILE.matcher(sanitized).matches()) {
+            throw new IllegalArgumentException("ctext file can only use letters, numbers, dot, underscore, or dash.");
+        }
+        mutateTrade(id, config -> config.set("ctext-file", sanitized));
     }
 
     public void setSortOrder(String id, int sortOrder) throws IOException {
@@ -639,6 +638,7 @@ public final class TradeManager {
                         .filter(command -> !command.isEmpty())
                         .toList();
                 commands.put(trigger, values);
+                validateConfiguredCommands(path, trigger, values);
             }
 
             trades.put(id, new TradeDefinition(
@@ -670,7 +670,7 @@ public final class TradeManager {
     }
 
     private void mutateTrade(String id, ConfigMutator mutator) throws IOException {
-        String normalized = normalizeId(id);
+        String normalized = requireValidTradeId(id);
         Path path = tradePath(normalized);
         if (!Files.exists(path)) {
             throw new IllegalArgumentException("Trade not found: " + normalized);
@@ -692,6 +692,14 @@ public final class TradeManager {
 
     private String normalizeId(String id) {
         return id == null ? "" : id.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String requireValidTradeId(String id) {
+        String normalized = normalizeId(id);
+        if (!isValidTradeId(normalized)) {
+            throw new IllegalArgumentException("Invalid trade id: " + id);
+        }
+        return normalized;
     }
 
     private String normalizeCategory(String category) {
@@ -1006,6 +1014,14 @@ public final class TradeManager {
             return LocalDate.of(year, first, second);
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException("Invalid date: " + input, exception);
+        }
+    }
+
+    private void validateConfiguredCommands(Path path, TradeTrigger trigger, List<String> commands) {
+        for (String commandLine : commands) {
+            if (commandLine.indexOf('\r') >= 0 || commandLine.indexOf('\n') >= 0 || commandLine.indexOf('\0') >= 0) {
+                warn(path, "Command '" + trigger.tradeConfigKey() + "' contains blocked control characters.");
+            }
         }
     }
 

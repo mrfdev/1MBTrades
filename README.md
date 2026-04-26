@@ -7,7 +7,7 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 ## Current Build Metadata
 
 - Plugin version: `1.0.1`
-- Next build number in `version.properties`: `029`
+- Next build number in `version.properties`: `031`
 - Target Java: `25`
 - Compile Paper API: `26.1.2.build.20-alpha`
 - Declared `api-version` floor: `1.21.11`
@@ -15,7 +15,7 @@ The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered serv
 
 The latest built local artifact in this workspace is:
 
-- `libs/1MB-Trades-v1.0.1-028-j25-26.1.2.build.20-alpha.jar`
+- `libs/1MB-Trades-v1.0.1-030-j25-26.1.2.build.20-alpha.jar`
 
 ## Features
 
@@ -143,8 +143,8 @@ Do not rely on or recreate a repo-local `/servers/` test setup for normal develo
 Foreground examples:
 
 ```bash
-/Users/floris/Projects/Codex/servers/run-test-server --paper 1.21.11 --plugin libs/1MB-Trades-v1.0.1-028-j25-26.1.2.build.20-alpha.jar --foreground
-/Users/floris/Projects/Codex/servers/run-test-server --paper 26.1.2 --plugin libs/1MB-Trades-v1.0.1-028-j25-26.1.2.build.20-alpha.jar --foreground
+/Users/floris/Projects/Codex/servers/run-test-server --paper 1.21.11 --plugin libs/1MB-Trades-v1.0.1-030-j25-26.1.2.build.20-alpha.jar --foreground
+/Users/floris/Projects/Codex/servers/run-test-server --paper 26.1.2 --plugin libs/1MB-Trades-v1.0.1-030-j25-26.1.2.build.20-alpha.jar --foreground
 ```
 
 Example:
@@ -345,6 +345,15 @@ Per-trade visibility and access:
 
 This works well with LuckPerms contexts such as per-world kit availability.
 
+## Command Template Safety
+
+- Trade command templates and `settings.global-command` are admin-controlled and powerful. Treat them like console access.
+- The plugin strips CR, LF, and NUL characters from dispatched command text and from alias argument passthrough before execution.
+- `settings.global-alias` is limited to command-safe characters: letters, numbers, colon, underscore, and dash.
+- `ctext-file` is limited to letters, numbers, dot, underscore, and dash.
+- Prefer fixed command verbs plus safe identifier placeholders such as `%player%`, `%player_name%`, `%player_uuid%`, `%id%`, `%trade_id%`, and `%ctext_file%`.
+- Treat text-heavy placeholders as chat-only output, not as command structure: `%trade_name%`, `%trade_description%`, `%required_items%`, `%missing_items%`, and `%missing_summary%`.
+
 ## Placeholders
 
 ### Trade and GUI Placeholders
@@ -519,6 +528,25 @@ Examples:
 %onembtrades_trade.summer_event.can_trade%
 %onembtrades_trade.summer_event.missing_items%
 ```
+
+## GUI Hardening Checklist
+
+- Shift-click while a 1MB-Trades GUI is open and confirm nothing moves into or out of the top inventory.
+- Press number keys over GUI buttons and filler items and confirm no hotbar swap occurs and no action triggers accidentally.
+- Use the offhand swap key over GUI slots and confirm nothing moves.
+- Press drop on GUI slots and confirm nothing leaves the GUI.
+- Drag items across GUI slots and confirm the drag is cancelled.
+- Double-click or spam the confirm button and confirm one trade attempt is processed at a time.
+- Click a close or info-style button and confirm the GUI closes on a delayed follow-up tick instead of directly inside the click event.
+- Close the inventory during navigation and confirm no stale menu reopens unexpectedly.
+- Click a close or info-style button and then switch contexts quickly to confirm a different inventory is not closed by mistake.
+- Close the inventory mid-action and confirm stale GUI actions do not process against the wrong session.
+- Disconnect or kick a player while a GUI is open and confirm no stale state remains when they rejoin.
+- Disconnect a player during an info or confirm follow-up window and confirm no stale action duplicates or item loss occur.
+- Disable or reload the plugin while players have a GUI open and confirm no items duplicate or disappear.
+- Test insufficient inventory contents, money, EXP, world access, and permission changes after the GUI is already open.
+- Test invalid command input for admin commands, especially trade ids, ctext file names, and added command templates.
+- Test command templates that use chat placeholders versus identifier placeholders and confirm only the intended output is produced.
 
 ## Command Prefixes
 

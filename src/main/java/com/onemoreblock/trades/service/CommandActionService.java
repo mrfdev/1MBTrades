@@ -108,7 +108,7 @@ public final class CommandActionService {
         String command = rawCommand.trim();
         int prefixSeparator = command.indexOf(':');
         if (prefixSeparator > 0) {
-            String prefix = command.substring(0, prefixSeparator).trim().toLowerCase();
+            String prefix = command.substring(0, prefixSeparator).trim().toLowerCase(Locale.ROOT);
             ExecutionMode parsedMode = ExecutionMode.fromPrefix(prefix);
             if (parsedMode != null) {
                 mode = parsedMode;
@@ -116,7 +116,7 @@ public final class CommandActionService {
             }
         }
 
-        String resolved = placeholderService.apply(player, command, replacements);
+        String resolved = sanitizeConfiguredText(placeholderService.apply(player, command, replacements));
         if (usesDispatchedCommand(mode) && shouldRenderMiniMessageForCommand(resolved)) {
             resolved = placeholderService.miniMessageToLegacySection(resolved);
         }
@@ -165,6 +165,16 @@ public final class CommandActionService {
 
     private void dispatch(CommandSender sender, String command) {
         Bukkit.dispatchCommand(sender, command);
+    }
+
+    private String sanitizeConfiguredText(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        return input.replace('\r', ' ')
+            .replace('\n', ' ')
+            .replace('\0', ' ')
+            .trim();
     }
 
     private Map<String, String> basePlaceholders(Player player, TradeDefinition trade) {

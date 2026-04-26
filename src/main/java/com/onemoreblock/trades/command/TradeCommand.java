@@ -570,7 +570,7 @@ public final class TradeCommand implements TabExecutor, Listener {
 
         String property = args[0].toLowerCase(Locale.ROOT);
         String tradeId = args[1];
-        String value = joinFrom(args, 2);
+        String value = requireInlineInput(joinFrom(args, 2), property);
         String normalizedValue = "none".equalsIgnoreCase(value) || "-".equals(value) ? "" : value;
 
         switch (property) {
@@ -645,7 +645,7 @@ public final class TradeCommand implements TabExecutor, Listener {
             if (args.length < 4) {
                 throw new IllegalArgumentException("Provide a command to add.");
             }
-            String commandLine = joinFrom(args, 3);
+            String commandLine = requireInlineInput(joinFrom(args, 3), "command");
             tradeManager.addCommand(tradeId, trigger, commandLine);
             auditLogService.logAdminAction(sender, "add_trade_command", Map.of("trade_id", tradeId, "group", trigger.tradeConfigKey(), "command", commandLine));
             placeholderService.sendMessage(
@@ -846,6 +846,16 @@ public final class TradeCommand implements TabExecutor, Listener {
 
     private String joinFrom(String[] args, int start) {
         return String.join(" ", Arrays.copyOfRange(args, start, args.length));
+    }
+
+    private String requireInlineInput(String input, String fieldName) {
+        if (input == null) {
+            return "";
+        }
+        if (input.indexOf('\r') >= 0 || input.indexOf('\n') >= 0 || input.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException(fieldName + " cannot contain line breaks or NUL characters.");
+        }
+        return input;
     }
 
     private int parseMaxTrades(String input) {

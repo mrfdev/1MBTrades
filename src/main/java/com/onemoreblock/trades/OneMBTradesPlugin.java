@@ -26,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
@@ -39,6 +40,8 @@ import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class OneMBTradesPlugin extends JavaPlugin {
+    private static final Pattern VALID_COMMAND_ALIAS = Pattern.compile("^[a-z0-9][a-z0-9:_-]{0,63}$");
+
     public record BuildInfo(String pluginVersion, String buildNumber, String targetJavaVersion, String paperApiVersion, String declaredApiVersion) {
     }
 
@@ -89,6 +92,9 @@ public final class OneMBTradesPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (tradeGuiService != null) {
+            tradeGuiService.shutdown();
+        }
         unregisterGlobalAliasCommand(true);
         if (placeholderRegistration != null) {
             placeholderRegistration.unregisterExpansion();
@@ -131,12 +137,13 @@ public final class OneMBTradesPlugin extends JavaPlugin {
             return true;
         }
 
-        String extraArgs = String.join(" ", args);
+        String extraArgs = sanitizeAliasArguments(String.join(" ", args));
         String resolved = placeholderService.apply(player, configuredCommand, java.util.Map.of(
             "player", player.getName(),
             "player_name", player.getName(),
             "args", extraArgs
         ));
+        resolved = sanitizeCommandInput(resolved);
         if (resolved.startsWith("/")) {
             resolved = resolved.substring(1);
         }
@@ -241,6 +248,12 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         }
 
         String normalizedAlias = alias.trim().toLowerCase(Locale.ROOT);
+        if (!VALID_COMMAND_ALIAS.matcher(normalizedAlias).matches()) {
+            getLogger().warning("Invalid global alias '" + alias + "'. Use only letters, numbers, colon, underscore, or dash.");
+            unregisterGlobalAliasCommand(false);
+            syncCommands();
+            return;
+        }
         if (globalAliasCommand instanceof DynamicAliasCommand && globalAliasCommand.getName().equalsIgnoreCase(normalizedAlias)) {
             globalAliasCommand.setDescription("Opens the configured 1MB-Trades entry point");
             globalAliasCommand.setUsage("/" + normalizedAlias);
@@ -470,6 +483,39 @@ public final class OneMBTradesPlugin extends JavaPlugin {
         }
 
         getLogger().warning("Bundled resource not found for " + destinationRelativePath);
+    }
+
+    private String sanitizeAliasArguments(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (char character : input.toCharArray()) {
+            if (Character.isLetterOrDigit(character)
+                || character == ' '
+                || character == '_'
+                || character == '-'
+                || character == '.'
+                || character == ',') {
+                builder.append(character);
+                continue;
+            }
+            if (Character.isWhitespace(character)) {
+                builder.append(' ');
+            }
+        }
+        return builder.toString().trim().replaceAll("\\s+", " ");
+    }
+
+    private String sanitizeCommandInput(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        return input.replace('\r', ' ')
+            .replace('\n', ' ')
+            .replace('\0', ' ')
+            .trim();
     }
 
     private void migrateLegacyTradesFolder() {
