@@ -1,48 +1,220 @@
+# 1MB-Trades main configuration
+# This file controls global plugin behavior, GUI materials, and optional
+# command hooks that run when players open or complete trades.
+#
+# Comment and default behavior:
+# - Existing values are kept when the plugin adds new defaults.
+# - Missing keys are added during startup and /_trade reload.
+# - Most changes require /_trade reload or a full server restart.
+# - No setting in this file is hot-applied immediately while the plugin is running.
+
 settings:
+  # Permission node required for admin subcommands such as /_trade reload,
+  # /_trade debug, /_trade create, and /_trade delete.
+  # Default: "onembtrade.admin"
+  # Expected values: any valid permission node string.
+  # Reload: requires /_trade reload or server restart.
   admin-permission: "onembtrade.admin"
+
+  # Prefix used when a trade file does not define its own permission.
+  # The plugin appends the trade id, so "onembtrade." + "summer_event"
+  # becomes "onembtrade.summer_event".
+  # Default: "onembtrade."
+  # Expected values: a permission prefix, usually ending with a dot.
+  # Reload: requires /_trade reload or server restart.
   trade-permission-prefix: "onembtrade."
+
+  # Optional public alias command that points players to one event or trade index.
+  # Leave this blank to disable the alias command entirely.
+  # Default: "summerevent"
+  # Expected values: lowercase letters, numbers, colon, underscore, or dash.
+  # Reload: requires /_trade reload or server restart.
   global-alias: "summerevent"
+
+  # Console command that runs when the alias command is used.
+  # Default: "_trade open summer_event %player%"
+  # Safe placeholders: %player%, %player_name%, %args%
+  # Notes: this is sanitized before dispatch and does not support multiline input.
+  # Reload: requires /_trade reload or server restart.
   global-command: "_trade open summer_event %player%"
+
+  # Locale file to load from plugins/1MB-Trades/Translations/.
+  # Default: "Locale_EN.yml"
+  # Expected values: an existing locale filename in the Translations folder.
+  # Reload: requires /_trade reload or server restart.
   locale-file: "Locale_EN.yml"
+
+  # Placeholder used for the player level line in the GUI player head tooltip.
+  # Default: "%cmi_user_level%"
+  # Expected values: a PlaceholderAPI or CMI placeholder that resolves to a level value.
+  # Reload: requires /_trade reload or server restart.
   player-exp-placeholder: "%cmi_user_level%"
+
+  # Placeholder used for the player balance line in the GUI player head tooltip.
+  # Default: "%cmi_user_balance%"
+  # Expected values: a PlaceholderAPI or CMI placeholder that resolves to a money value.
+  # Reload: requires /_trade reload or server restart.
   player-balance-placeholder: "%cmi_user_balance%"
+
+  # When true, the trade detail GUI closes after a successful trade.
+  # When false, the trade GUI reopens so the player can inspect it again.
+  # Default: true
+  # Expected values: true or false.
+  # Reload: requires /_trade reload or server restart.
   close-on-success: true
+
+  # When true, the plugin sends its own built-in success and failure chat messages.
+  # Set this to false if you prefer to fully control player feedback through
+  # global-commands or per-trade command lists such as console:cmi msg.
+  # Default: true
+  # Expected values: true or false.
+  # Reload: requires /_trade reload or server restart.
   send-plugin-result-messages: true
+
+  # Minimum time between confirm button clicks for the same player.
+  # This helps block spam clicking and accidental double-processing.
+  # Default: 750
+  # Safe values: 250 or higher. Values below 250 are clamped up to 250 ms.
+  # Units: milliseconds.
+  # Reload: requires /_trade reload or server restart.
   trade-click-cooldown-ms: 750
+
+  # When true, direct trade opens respect hide-when-completed and show the
+  # completed or limit reached message instead of reopening a hidden trade.
+  # Default: true
+  # Expected values: true or false.
+  # Reload: requires /_trade reload or server restart.
   hide-completed-on-direct-open: true
+
+  # Global world blacklist for all trades.
+  # Players can never execute trades in these worlds, even if a trade file
+  # lists the same world under allowed-worlds.
+  # Default: []
+  # Expected values: a YAML list of exact world names.
+  # Reload: requires /_trade reload or server restart.
   blacklisted-worlds: []
 
 gui:
+  # GUI filler item used for empty slots in both the index and trade detail menus.
+  # Default: "BLACK_STAINED_GLASS_PANE"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   filler:
     material: "BLACK_STAINED_GLASS_PANE"
+
+  # GUI item used for the trade info button that can trigger ctext/info actions.
+  # Default: "WRITTEN_BOOK"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   info-book:
     material: "WRITTEN_BOOK"
+
+  # GUI item used for the main confirm trade button.
+  # Default: "EMERALD"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   trade-button:
     material: "EMERALD"
+
+  # GUI item used for returning from a trade detail page back to the index.
+  # Default: "ARROW"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   back-button:
     material: "ARROW"
+
+  # GUI item used for closing the current menu.
+  # Default: "BARRIER"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   close-button:
     material: "BARRIER"
+
+  # GUI item used for going to the previous page in the index menu.
+  # Default: "SPECTRAL_ARROW"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   previous-page:
     material: "SPECTRAL_ARROW"
+
+  # GUI item used for going to the next page in the index menu.
+  # Default: "SPECTRAL_ARROW"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   next-page:
     material: "SPECTRAL_ARROW"
+
+  # GUI item used for the page indicator slot in the index menu.
+  # Default: "PAPER"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   page-indicator:
     material: "PAPER"
+
+  # GUI item used when a player currently meets the trade requirements.
+  # Default: "LIME_DYE"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   ready-status:
     material: "LIME_DYE"
+
+  # GUI item used when a player is missing required items, money, or levels.
+  # Default: "RED_DYE"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   missing-status:
     material: "RED_DYE"
+
+  # GUI item used when a trade is locked, disabled, expired, or otherwise unavailable.
+  # Default: "GRAY_DYE"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   locked-status:
     material: "GRAY_DYE"
+
+  # GUI item used when a trade does not define a custom reward preview item.
+  # Default: "NETHER_STAR"
+  # Expected values: valid Bukkit Material names.
+  # Reload: requires /_trade reload or server restart.
   reward-preview:
     material: "NETHER_STAR"
 
 global-commands:
+  # Commands that run when the player opens the main trade index GUI.
+  # Default: []
+  # Expected values: a YAML list of command strings.
+  # Prefixes: console:, player:, message:, actionbar:
+  # Reload: requires /_trade reload or server restart.
   open-index: []
+
+  # Commands that run when the player opens a specific trade detail GUI.
+  # Default: []
+  # Expected values: a YAML list of command strings.
+  # Prefixes: console:, player:, message:, actionbar:
+  # Reload: requires /_trade reload or server restart.
   open-trade: []
+
+  # Commands that run when the player clicks the info/book button for a trade.
+  # Default: []
+  # Expected values: a YAML list of command strings.
+  # Prefixes: console:, player:, message:, actionbar:
+  # Notes: if a trade has no custom info commands but does have ctext-file set,
+  # the plugin falls back to running console:cmi ctext <ctext> %player%.
+  # Reload: requires /_trade reload or server restart.
   info: []
+
+  # Commands that run after a successful trade.
+  # Default: [console:cmi sound ENTITY_PLAYER_LEVELUP -v:0.8 %player% -s]
+  # Expected values: a YAML list of command strings.
+  # Prefixes: console:, player:, message:, actionbar:
+  # Reload: requires /_trade reload or server restart.
   success:
     - "console:cmi sound ENTITY_PLAYER_LEVELUP -v:0.8 %player% -s"
+
+  # Commands that run after a failed trade attempt.
+  # Default: [console:cmi sound ENTITY_VILLAGER_NO -v:0.8 %player% -s]
+  # Expected values: a YAML list of command strings.
+  # Prefixes: console:, player:, message:, actionbar:
+  # Reload: requires /_trade reload or server restart.
   fail:
     - "console:cmi sound ENTITY_VILLAGER_NO -v:0.8 %player% -s"

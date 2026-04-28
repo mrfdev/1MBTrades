@@ -207,12 +207,15 @@ public final class OneMBTradesPlugin extends JavaPlugin {
     }
 
     private void migrateConfigDefaults() {
+        File configFile = configFile();
+        YamlConfiguration config = YamlConfigSupport.load(configFile, getLogger());
         String legacyExpPlaceholder = "%cmi_user_exp%";
         String correctedLevelPlaceholder = "%cmi_user_level%";
-        String configuredValue = getConfig().getString("settings.player-exp-placeholder", correctedLevelPlaceholder);
+        String configuredValue = config.getString("settings.player-exp-placeholder", correctedLevelPlaceholder);
         if (legacyExpPlaceholder.equalsIgnoreCase(configuredValue)) {
-            getConfig().set("settings.player-exp-placeholder", correctedLevelPlaceholder);
-            saveConfig();
+            config.set("settings.player-exp-placeholder", correctedLevelPlaceholder);
+            saveYamlFile(configFile, config, "config.yml");
+            reloadConfig();
             getLogger().info("Updated settings.player-exp-placeholder to " + correctedLevelPlaceholder + " for player level display.");
         }
     }
@@ -378,7 +381,7 @@ public final class OneMBTradesPlugin extends JavaPlugin {
     }
 
     private void mergeMissingConfigDefaults() {
-        File configFile = new File(getDataFolder(), "config.yml");
+        File configFile = configFile();
         if (mergeMissingYamlDefaults(configFile, "config.yml")) {
             reloadConfig();
         }
@@ -389,25 +392,22 @@ public final class OneMBTradesPlugin extends JavaPlugin {
             if (input == null || !targetFile.exists()) {
                 return false;
             }
-
-            YamlConfiguration existing = YamlConfigSupport.load(targetFile, getLogger());
-            YamlConfiguration defaults = YamlConfigSupport.load(input, getLogger(), resourcePath);
-            boolean changed = false;
-            for (String path : defaults.getKeys(true)) {
-                if (existing.contains(path)) {
-                    continue;
-                }
-                existing.set(path, defaults.get(path));
-                changed = true;
-            }
-
-            if (changed) {
-                existing.save(targetFile);
-            }
-            return changed;
+            return YamlConfigSupport.syncMissingKeysAndComments(targetFile, input, getLogger(), resourcePath);
         } catch (IOException exception) {
             getLogger().warning("Could not merge defaults for " + targetFile.getName() + ": " + exception.getMessage());
             return false;
+        }
+    }
+
+    private File configFile() {
+        return new File(getDataFolder(), "config.yml");
+    }
+
+    private void saveYamlFile(File file, YamlConfiguration configuration, String description) {
+        try {
+            YamlConfigSupport.save(file.toPath(), configuration);
+        } catch (IOException exception) {
+            getLogger().warning("Could not save " + description + ": " + exception.getMessage());
         }
     }
 
