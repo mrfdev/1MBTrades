@@ -1,5 +1,10 @@
 # 1MB-Trades
 
+> [!WARNING]
+> **Deprecated:** this standalone project is no longer the active home for `1MB-Trades`.
+> Development has moved into [1MB-CMIAPI](https://github.com/mrfdev/1MB-CMIAPI).
+> This repository is being kept around in case you want to roll back to the older standalone version later.
+
 Custom Paper plugin for 1MoreBlock.com that lets players exchange collected items for rewards such as kit unlock permissions, command-based rewards, and event progression.
 
 The plugin is designed for Paper `1.21.11+`, Java `25+`, and a CMI-centered server stack. It uses an index GUI plus per-trade detail GUIs, supports MiniMessage text, and stores each trade in its own YAML file.
